@@ -1,0 +1,43 @@
+Recorded Date/Time	Time when Job has come inside printer
+ID	ID number for JOB, its unique for every job that have come inside printer
+Sub ID	NA
+Job Name	Filename of the job
+Status	print status
+Owner	name for person who added the print
+Logical Printer	NA
+Arrived	Time when JOB first arrived into printer
+RIP Start Date/Time	RIP start time for print file
+RIP Elapsed Time	Time taken for RIP
+Rasterization Start Date/Time	Rasterization start time for print file
+Rasterization Elapsed Time	Time taken for Rasterization
+Printing Start Date/Time	Printing start time for print file
+Elapsed Printing Time	Time taken for printing
+Printed	Print completed time
+Color Mode	"Gray scale which is monochrome takes only black and white color
+Full Color which can take any color toner for printing"
+Paper Type	Type of paper and thickness by GSM information
+Media Name	NA
+Paper Tray	Tray which paper is used for print
+Paper Size	Dimention details of paper
+Paper Width	Width of paper in mm
+Paper Length	Length of paper in mm
+2 Sided	2 sided print property
+Copies	Number of copies
+Input Pages	Counter of input pages given for print
+Printed Pages	Counter of total actual printed pages
+Printed Color Pages	Counter of only color pages printed
+Printed Black & White Pages	Counter of only monochrme pages printed
+Pages Printed with Specialty Toner	Pages printed using special toner
+Pages Printed with GLD #1	Pages printed using GOLD toner
+Pages Printed with SLV #1	Pages printed using SILVER toner
+Pages Printed with CLR #1	Pages printed using CLEAR toner
+Pages Printed with WHT #1	Pages printed using WHITE toner
+Pages Printed with CR #1	Pages printed using TEXTURE toner
+Pages Printed with P #1	Pages printed using PINK toner
+Printed Blank Pages	Any blank pages printed, do not count this in printed count
+Printed Sheets	Same as Printed Pages column
+Last Printed Page	NA
+Waste Sheets	Paper JAM - Reduce from total counter
+Banner Sheet	NA
+Account	NA
+Error Info	information about the error print with error status

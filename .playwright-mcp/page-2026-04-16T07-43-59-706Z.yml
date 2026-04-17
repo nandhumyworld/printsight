@@ -1,0 +1,140 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e22]:
+    - complementary [ref=e23]:
+      - generic [ref=e24]:
+        - img [ref=e25]
+        - generic [ref=e29]: PrintSight
+      - navigation [ref=e30]:
+        - generic [ref=e31]:
+          - button "Overview" [ref=e32] [cursor=pointer]:
+            - generic [ref=e33]: Overview
+            - img [ref=e34]
+          - link "Dashboard" [ref=e36] [cursor=pointer]:
+            - /url: /dashboard
+            - img [ref=e37]
+            - text: Dashboard
+          - link "Analytics" [ref=e42] [cursor=pointer]:
+            - /url: /analytics
+            - img [ref=e43]
+            - text: Analytics
+        - generic [ref=e45]:
+          - button "Printers" [ref=e46] [cursor=pointer]:
+            - generic [ref=e47]: Printers
+            - img [ref=e48]
+          - link "All Printers" [ref=e50] [cursor=pointer]:
+            - /url: /printers
+            - img [ref=e51]
+            - text: All Printers
+        - generic [ref=e55]:
+          - button "Reports" [ref=e56] [cursor=pointer]:
+            - generic [ref=e57]: Reports
+            - img [ref=e58]
+          - link "Cost Reports" [ref=e60] [cursor=pointer]:
+            - /url: /reports
+            - img [ref=e61]
+            - text: Cost Reports
+          - link "Toner Yield" [ref=e64] [cursor=pointer]:
+            - /url: /reports/toner-yield
+            - img [ref=e65]
+            - text: Toner Yield
+        - generic [ref=e67]:
+          - button "Settings" [ref=e68] [cursor=pointer]:
+            - generic [ref=e69]: Settings
+            - img [ref=e70]
+          - link "Paper & Ink Costs" [ref=e72] [cursor=pointer]:
+            - /url: /settings/costs
+            - img [ref=e73]
+            - text: Paper & Ink Costs
+          - link "Toner Replacements" [ref=e76] [cursor=pointer]:
+            - /url: /settings/toner-replacements
+            - img [ref=e77]
+            - text: Toner Replacements
+          - link "Notifications" [ref=e80] [cursor=pointer]:
+            - /url: /settings/notifications
+            - img [ref=e81]
+            - text: Notifications
+          - link "Webhooks" [ref=e84] [cursor=pointer]:
+            - /url: /settings/webhooks
+            - img [ref=e85]
+            - text: Webhooks
+        - link "Admin Panel" [ref=e89] [cursor=pointer]:
+          - /url: /admin
+          - img [ref=e90]
+          - text: Admin Panel
+    - generic [ref=e92]:
+      - banner [ref=e93]:
+        - generic [ref=e94]:
+          - generic [ref=e95]:
+            - img [ref=e96]
+            - generic [ref=e99]: Admin User
+            - generic [ref=e100]: owner
+          - button [ref=e101] [cursor=pointer]:
+            - img [ref=e102]
+      - main [ref=e105]:
+        - generic [ref=e106]:
+          - generic [ref=e107]:
+            - generic [ref=e108]:
+              - heading "Dashboard" [level=1] [ref=e109]
+              - paragraph [ref=e110]: Print cost overview and trends
+            - generic [ref=e111]:
+              - button "7 days" [ref=e112] [cursor=pointer]
+              - button "30 days" [ref=e113] [cursor=pointer]
+              - button "90 days" [ref=e114] [cursor=pointer]
+          - generic [ref=e115]:
+            - generic [ref=e116]:
+              - generic [ref=e117]:
+                - paragraph [ref=e118]: Total Cost
+                - img [ref=e120]
+              - paragraph [ref=e122]: ₹0.00
+              - paragraph [ref=e123]: 5 jobs
+            - generic [ref=e124]:
+              - generic [ref=e125]:
+                - paragraph [ref=e126]: Total Pages
+                - img [ref=e128]
+              - paragraph [ref=e131]: "52"
+              - paragraph [ref=e132]: "Cost/page: ₹0.00"
+            - generic [ref=e133]:
+              - generic [ref=e134]:
+                - paragraph [ref=e135]: Waste Cost
+                - img [ref=e137]
+              - paragraph [ref=e139]: ₹0.00
+              - paragraph [ref=e140]: 23.1% of total pages
+            - generic [ref=e141]:
+              - generic [ref=e142]:
+                - paragraph [ref=e143]: Color vs B&W
+                - img [ref=e145]
+              - paragraph [ref=e149]: 67.3% color
+              - paragraph [ref=e150]: 35 color / 17 B&W
+          - generic [ref=e151]:
+            - heading "Cost Trend" [level=2] [ref=e152]
+            - generic [ref=e154]:
+              - img [ref=e155]:
+                - generic [ref=e160]:
+                  - generic [ref=e162]: 2026-04-01
+                  - generic [ref=e164]: 2026-04-02
+                  - generic [ref=e166]: 2026-04-05
+                  - generic [ref=e168]: 2026-04-10
+                  - generic [ref=e170]: 2026-04-15
+                - generic [ref=e172]:
+                  - generic [ref=e174]: ₹0
+                  - generic [ref=e176]: ₹1
+                  - generic [ref=e178]: ₹2
+                  - generic [ref=e180]: ₹3
+                  - generic [ref=e182]: ₹4
+              - generic:
+                - generic:
+                  - paragraph: 2026-04-02
+                  - list:
+                    - listitem: "Total Cost : ₹0.00"
+                    - listitem: "Waste Cost : ₹0.00"
+          - generic [ref=e187]:
+            - generic [ref=e188]:
+              - heading "Printers" [level=2] [ref=e189]
+              - button "View all →" [ref=e190] [cursor=pointer]
+            - generic [ref=e192] [cursor=pointer]:
+              - generic [ref=e193]:
+                - img [ref=e194]
+                - generic [ref=e198]: HP LaserJet Pro
+              - paragraph [ref=e199]: HP M404dn
+              - paragraph [ref=e200]: Office 1
+  - generic [ref=e201]: ₹0
