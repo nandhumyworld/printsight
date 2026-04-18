@@ -63,13 +63,30 @@ function PaperRow({ paper, onDelete }: { paper: Paper; onDelete: (id: number) =>
 
 function AddPaperForm({ onDone }: { onDone: () => void }) {
   const qc = useQueryClient();
-  const [form, setForm] = useState({ name: '', display_name: '', price_per_sheet: '', currency: 'INR' });
+  const [form, setForm] = useState({
+    name: '',
+    display_name: '',
+    width_mm: '',
+    length_mm: '',
+    width_tolerance_mm: '2',
+    length_tolerance_mm: '2',
+    gsm_min: '',
+    gsm_max: '',
+    price_per_sheet: '',
+    currency: 'INR',
+  });
   const set = (f: string) => (e: React.ChangeEvent<HTMLInputElement>) => setForm(p => ({ ...p, [f]: e.target.value }));
 
   const create = useMutation({
     mutationFn: () => api.post('/cost-config/papers', {
       name: form.name,
       display_name: form.display_name || undefined,
+      width_mm: form.width_mm ? parseFloat(form.width_mm) : undefined,
+      length_mm: form.length_mm ? parseFloat(form.length_mm) : undefined,
+      width_tolerance_mm: parseFloat(form.width_tolerance_mm),
+      length_tolerance_mm: parseFloat(form.length_tolerance_mm),
+      gsm_min: form.gsm_min ? parseInt(form.gsm_min) : undefined,
+      gsm_max: form.gsm_max ? parseInt(form.gsm_max) : undefined,
       price_per_sheet: parseFloat(form.price_per_sheet),
       currency: form.currency,
     }),
@@ -87,6 +104,30 @@ function AddPaperForm({ onDone }: { onDone: () => void }) {
         <div className="space-y-1">
           <Label>Display Name</Label>
           <Input placeholder="e.g. A4 80gsm" value={form.display_name} onChange={set('display_name')} />
+        </div>
+        <div className="space-y-1">
+          <Label>Width (mm)</Label>
+          <Input type="number" placeholder="210" value={form.width_mm} onChange={set('width_mm')} />
+        </div>
+        <div className="space-y-1">
+          <Label>Length (mm)</Label>
+          <Input type="number" placeholder="297" value={form.length_mm} onChange={set('length_mm')} />
+        </div>
+        <div className="space-y-1">
+          <Label>Width Tolerance (mm)</Label>
+          <Input type="number" step="0.1" value={form.width_tolerance_mm} onChange={set('width_tolerance_mm')} />
+        </div>
+        <div className="space-y-1">
+          <Label>Length Tolerance (mm)</Label>
+          <Input type="number" step="0.1" value={form.length_tolerance_mm} onChange={set('length_tolerance_mm')} />
+        </div>
+        <div className="space-y-1">
+          <Label>GSM Min</Label>
+          <Input type="number" placeholder="60" value={form.gsm_min} onChange={set('gsm_min')} />
+        </div>
+        <div className="space-y-1">
+          <Label>GSM Max</Label>
+          <Input type="number" placeholder="300" value={form.gsm_max} onChange={set('gsm_max')} />
         </div>
         <div className="space-y-1">
           <Label>Price per Sheet *</Label>
