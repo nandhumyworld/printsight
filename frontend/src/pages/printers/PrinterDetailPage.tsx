@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { formatDateTime } from '@/lib/utils';
-import { ArrowLeft, Upload, CheckCircle, AlertCircle, FileText, Loader2, Eye, X, Trash2, Plus } from 'lucide-react';
+import { ArrowLeft, Upload, CheckCircle, AlertCircle, FileText, Loader2, Eye, X, Trash2, Plus, Edit } from 'lucide-react';
 
 type UploadStep = 'idle' | 'previewing' | 'preview_ready' | 'importing' | 'done';
 
@@ -53,6 +53,8 @@ function TonerManagement({ printerId, columnMapping }: {
   const qc = useQueryClient();
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ toner_color: '', toner_type: 'standard', price_per_unit: '', rated_yield_pages: '', currency: 'INR' });
+  const [editToner, setEditToner] = useState<any | null>(null);
+  const [editForm, setEditForm] = useState({ price_per_unit: '', rated_yield_pages: '', currency: 'INR' });
 
   const { data: toners, isLoading } = useQuery({
     queryKey: ['toners', printerId],
@@ -92,6 +94,20 @@ function TonerManagement({ printerId, columnMapping }: {
   const deleteToner = useMutation({
     mutationFn: (tonerId: number) => api.delete(`/printers/${printerId}/toners/${tonerId}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['toners', printerId] }),
+  });
+
+  const updateToner = useMutation({
+    mutationFn: () => api.put(`/printers/${printerId}/toners/${editToner.id}`, {
+      toner_color: editToner.toner_color,
+      toner_type: editToner.toner_type,
+      price_per_unit: parseFloat(editForm.price_per_unit),
+      rated_yield_pages: parseInt(editForm.rated_yield_pages),
+      currency: editForm.currency,
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['toners', printerId] });
+      setEditToner(null);
+    },
   });
 
   // When a color is picked from the dropdown, also auto-set the type
@@ -258,17 +274,61 @@ function TonerManagement({ printerId, columnMapping }: {
                   <td className="px-4 py-2.5 text-right">{t.currency} {parseFloat(t.price_per_unit).toLocaleString()}</td>
                   <td className="px-4 py-2.5 text-right">{t.rated_yield_pages.toLocaleString()} pages</td>
                   <td className="px-4 py-2.5 text-right">
-                    <button
-                      onClick={() => deleteToner.mutate(t.id)}
-                      className="text-muted-foreground hover:text-destructive p-1"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={() => {
+                          setEditToner(t);
+                          setEditForm({ price_per_unit: String(t.price_per_unit), rated_yield_pages: String(t.rated_yield_pages), currency: t.currency });
+                        }}
+                        className="text-muted-foreground hover:text-primary p-1"
+                      >
+                        <Edit className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => deleteToner.mutate(t.id)}
+                        className="text-muted-foreground hover:text-destructive p-1"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Toner edit modal */}
+      {editToner && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-sm rounded-xl border bg-card p-6 shadow-xl mx-4 space-y-4">
+            <h3 className="font-semibold">Edit {editToner.toner_color} Toner</h3>
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label>Price per Unit</Label>
+                <Input type="number" min="0" step="0.01" value={editForm.price_per_unit} onChange={e => setEditForm(p => ({ ...p, price_per_unit: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>Rated Yield (pages)</Label>
+                <Input type="number" min="1" value={editForm.rated_yield_pages} onChange={e => setEditForm(p => ({ ...p, rated_yield_pages: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>Currency</Label>
+                <select className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm" value={editForm.currency} onChange={e => setEditForm(p => ({ ...p, currency: e.target.value }))}>
+                  <option value="INR">INR</option>
+                  <option value="USD">USD</option>
+                  <option value="EUR">EUR</option>
+                  <option value="GBP">GBP</option>
+                </select>
+              </div>
+            </div>
+            {updateToner.isError && <p className="text-sm text-destructive">{(updateToner.error as any)?.response?.data?.detail || 'Update failed'}</p>}
+            <div className="flex gap-3">
+              <Button variant="outline" size="sm" onClick={() => setEditToner(null)}>Cancel</Button>
+              <Button size="sm" onClick={() => updateToner.mutate()} disabled={updateToner.isPending} isLoading={updateToner.isPending}>Save</Button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -313,6 +373,13 @@ export default function PrinterDetailPage() {
     queryKey: ['jobs', id],
     queryFn: () => api.get(`/printers/${id}/jobs?per_page=50`).then(r => r.data),
   });
+
+  const { data: toners } = useQuery({
+    queryKey: ['toners', id],
+    queryFn: () => api.get(`/printers/${id}/toners`).then(r => r.data.data),
+  });
+
+  const hasNoToners = Array.isArray(toners) && toners.length === 0;
 
   const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -377,12 +444,18 @@ export default function PrinterDetailPage() {
         <button onClick={() => navigate('/printers')} className="text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-5 w-5" />
         </button>
-        <div>
+        <div className="flex-1">
           <h1 className="text-2xl font-bold">{printer.name}</h1>
           <p className="text-sm text-muted-foreground">
             {[printer.model, printer.type, printer.location].filter(Boolean).join(' · ')}
           </p>
         </div>
+        <button
+          onClick={() => navigate(`/printers/${id}/edit`)}
+          className="text-sm text-primary hover:underline"
+        >
+          Edit →
+        </button>
       </div>
 
       {/* Upload Card */}
@@ -396,6 +469,13 @@ export default function PrinterDetailPage() {
             Configure column mapping →
           </button>
         </div>
+
+        {/* Upload gate: warn if no toners */}
+        {hasNoToners && (
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <strong>CSV upload is disabled.</strong> Configure at least one toner cartridge below before uploading print logs.
+          </div>
+        )}
 
         {/* Step: idle or done */}
         {(step === 'idle' || step === 'done') && (
