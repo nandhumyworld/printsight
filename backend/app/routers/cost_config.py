@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.deps import CurrentUser, OwnerUser
 from app.database import get_db
-from app.models.paper import Paper
+from app.models.paper import Paper, PrinterPaper
 
 router = APIRouter(prefix="/cost-config", tags=["cost-config"])
 
@@ -20,11 +20,14 @@ class PaperCreate(BaseModel):
     display_name: str | None = None
     length_mm: float | None = None
     width_mm: float | None = None
+    length_tolerance_mm: float = 2.0
+    width_tolerance_mm: float = 2.0
     gsm_min: int | None = None
     gsm_max: int | None = None
     counter_multiplier: float = 1.0
     price_per_sheet: float
     currency: str = "INR"
+    printer_ids: list[int] = []
 
 
 class PaperUpdate(BaseModel):
@@ -34,6 +37,8 @@ class PaperUpdate(BaseModel):
     counter_multiplier: float | None = None
     gsm_min: int | None = None
     gsm_max: int | None = None
+    length_tolerance_mm: float | None = None
+    width_tolerance_mm: float | None = None
 
 
 def _paper_out(p: Paper) -> dict:
@@ -43,6 +48,8 @@ def _paper_out(p: Paper) -> dict:
         "display_name": p.display_name,
         "length_mm": float(p.length_mm) if p.length_mm else None,
         "width_mm": float(p.width_mm) if p.width_mm else None,
+        "length_tolerance_mm": float(p.length_tolerance_mm),
+        "width_tolerance_mm": float(p.width_tolerance_mm),
         "gsm_min": p.gsm_min,
         "gsm_max": p.gsm_max,
         "counter_multiplier": float(p.counter_multiplier),
@@ -69,6 +76,8 @@ async def create_paper(body: PaperCreate, current_user: OwnerUser, db: Session =
         display_name=body.display_name,
         length_mm=Decimal(str(body.length_mm)) if body.length_mm else None,
         width_mm=Decimal(str(body.width_mm)) if body.width_mm else None,
+        length_tolerance_mm=Decimal(str(body.length_tolerance_mm)),
+        width_tolerance_mm=Decimal(str(body.width_tolerance_mm)),
         gsm_min=body.gsm_min,
         gsm_max=body.gsm_max,
         counter_multiplier=Decimal(str(body.counter_multiplier)),
@@ -76,6 +85,9 @@ async def create_paper(body: PaperCreate, current_user: OwnerUser, db: Session =
         currency=body.currency,
     )
     db.add(p)
+    db.flush()
+    for pid in body.printer_ids:
+        db.add(PrinterPaper(printer_id=pid, paper_id=p.id))
     db.commit()
     db.refresh(p)
     return {"data": _paper_out(p), "message": "Paper created"}
@@ -98,6 +110,10 @@ async def update_paper(paper_id: int, body: PaperUpdate, current_user: OwnerUser
         p.gsm_min = body.gsm_min
     if body.gsm_max is not None:
         p.gsm_max = body.gsm_max
+    if body.length_tolerance_mm is not None:
+        p.length_tolerance_mm = Decimal(str(body.length_tolerance_mm))
+    if body.width_tolerance_mm is not None:
+        p.width_tolerance_mm = Decimal(str(body.width_tolerance_mm))
     db.commit()
     db.refresh(p)
     return {"data": _paper_out(p), "message": "Paper updated"}

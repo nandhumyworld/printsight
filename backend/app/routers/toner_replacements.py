@@ -22,6 +22,9 @@ class ReplacementCreate(BaseModel):
     toner_id: int
     counter_reading_at_replacement: int
     replaced_at: str  # ISO string
+    cartridge_price_per_unit: float
+    cartridge_rated_yield_pages: int
+    cartridge_currency: str = "INR"
     notes: str | None = None
 
 
@@ -36,6 +39,9 @@ def _log_out(log: TonerReplacementLog) -> dict:
         "replaced_by_user_id": log.replaced_by_user_id,
         "counter_reading_at_replacement": log.counter_reading_at_replacement,
         "replaced_at": log.replaced_at.isoformat(),
+        "cartridge_price_per_unit": float(log.cartridge_price_per_unit),
+        "cartridge_rated_yield_pages": log.cartridge_rated_yield_pages,
+        "cartridge_currency": log.cartridge_currency,
         "actual_yield_pages": log.actual_yield_pages,
         "yield_efficiency_pct": float(log.yield_efficiency_pct) if log.yield_efficiency_pct else None,
         "notes": log.notes,
@@ -80,6 +86,8 @@ async def create_replacement(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid replaced_at format")
 
+    from decimal import Decimal
+
     # Compute actual yield from previous replacement
     prev = db.query(TonerReplacementLog).filter(
         TonerReplacementLog.toner_id == body.toner_id
@@ -89,9 +97,8 @@ async def create_replacement(
     efficiency_pct = None
     if prev:
         actual_yield = body.counter_reading_at_replacement - prev.counter_reading_at_replacement
-        if actual_yield > 0 and toner.rated_yield_pages > 0:
-            from decimal import Decimal
-            efficiency_pct = Decimal(str(round(actual_yield / toner.rated_yield_pages * 100, 2)))
+        if actual_yield > 0 and body.cartridge_rated_yield_pages > 0:
+            efficiency_pct = Decimal(str(round(actual_yield / body.cartridge_rated_yield_pages * 100, 2)))
 
     log = TonerReplacementLog(
         printer_id=body.printer_id,
@@ -99,6 +106,9 @@ async def create_replacement(
         replaced_by_user_id=current_user.id,
         counter_reading_at_replacement=body.counter_reading_at_replacement,
         replaced_at=replaced_at,
+        cartridge_price_per_unit=Decimal(str(body.cartridge_price_per_unit)),
+        cartridge_rated_yield_pages=body.cartridge_rated_yield_pages,
+        cartridge_currency=body.cartridge_currency,
         actual_yield_pages=actual_yield,
         yield_efficiency_pct=efficiency_pct,
         notes=body.notes,
