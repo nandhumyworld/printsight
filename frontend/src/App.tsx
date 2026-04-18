@@ -8,6 +8,7 @@ import DashboardPage from '@/pages/dashboard/DashboardPage';
 import PrintersPage from '@/pages/printers/PrintersPage';
 import AddPrinterPage from '@/pages/printers/AddPrinterPage';
 import PrinterDetailPage from '@/pages/printers/PrinterDetailPage';
+import EditPrinterPage from '@/pages/printers/EditPrinterPage';
 import ColumnMappingPage from '@/pages/printers/ColumnMappingPage';
 import AnalyticsPage from '@/pages/analytics/AnalyticsPage';
 import CostConfigPage from '@/pages/settings/CostConfigPage';
@@ -37,6 +38,7 @@ export default function App() {
         <Route path="/printers" element={<PrintersPage />} />
         <Route path="/printers/new" element={<AddPrinterPage />} />
         <Route path="/printers/:id" element={<PrinterDetailPage />} />
+        <Route path="/printers/:id/edit" element={<EditPrinterPage />} />
         <Route path="/printers/:id/mapping" element={<ColumnMappingPage />} />
         <Route path="/reports" element={<ReportsPage />} />
         <Route path="/reports/toner-yield" element={<TonerYieldPage />} />
