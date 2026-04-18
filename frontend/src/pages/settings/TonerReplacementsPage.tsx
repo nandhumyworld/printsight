@@ -14,6 +14,9 @@ function AddReplacementForm({ printers, onDone }: { printers: any[]; onDone: () 
     toner_id: '',
     counter_reading_at_replacement: '',
     replaced_at: new Date().toISOString().slice(0, 16),
+    cartridge_price_per_unit: '',
+    cartridge_rated_yield_pages: '',
+    cartridge_currency: 'INR',
     notes: '',
   });
 
@@ -26,12 +29,27 @@ function AddReplacementForm({ printers, onDone }: { printers: any[]; onDone: () 
     enabled: !!form.printer_id,
   });
 
+  const handleTonerSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const tonerId = e.target.value;
+    const selected = toners?.find((t: any) => String(t.id) === tonerId);
+    setForm(p => ({
+      ...p,
+      toner_id: tonerId,
+      cartridge_price_per_unit: selected ? String(selected.price_per_unit) : '',
+      cartridge_rated_yield_pages: selected ? String(selected.rated_yield_pages) : '',
+      cartridge_currency: selected?.currency ?? 'INR',
+    }));
+  };
+
   const create = useMutation({
     mutationFn: () => api.post('/toner-replacements', {
       printer_id: parseInt(form.printer_id),
       toner_id: parseInt(form.toner_id),
       counter_reading_at_replacement: parseInt(form.counter_reading_at_replacement),
       replaced_at: new Date(form.replaced_at).toISOString(),
+      cartridge_price_per_unit: parseFloat(form.cartridge_price_per_unit),
+      cartridge_rated_yield_pages: parseInt(form.cartridge_rated_yield_pages),
+      cartridge_currency: form.cartridge_currency,
       notes: form.notes || undefined,
     }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['replacements'] }); onDone(); },
@@ -57,7 +75,7 @@ function AddReplacementForm({ printers, onDone }: { printers: any[]; onDone: () 
           <select
             className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
             value={form.toner_id}
-            onChange={set('toner_id')}
+            onChange={handleTonerSelect}
             disabled={!form.printer_id}
           >
             <option value="">Select toner...</option>
@@ -72,6 +90,35 @@ function AddReplacementForm({ printers, onDone }: { printers: any[]; onDone: () 
           <Label>Date & Time *</Label>
           <Input type="datetime-local" value={form.replaced_at} onChange={set('replaced_at')} />
         </div>
+        <div className="space-y-1">
+          <Label>Cartridge Price (pre-filled, editable) *</Label>
+          <div className="flex gap-2">
+            <Input
+              type="number" min="0" step="0.01"
+              placeholder="e.g. 5000"
+              value={form.cartridge_price_per_unit}
+              onChange={set('cartridge_price_per_unit')}
+            />
+            <select
+              className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+              value={form.cartridge_currency}
+              onChange={set('cartridge_currency')}
+            >
+              <option value="INR">INR</option>
+              <option value="USD">USD</option>
+              <option value="EUR">EUR</option>
+            </select>
+          </div>
+        </div>
+        <div className="space-y-1">
+          <Label>Cartridge Rated Yield (pages, pre-filled, editable) *</Label>
+          <Input
+            type="number" min="1"
+            placeholder="e.g. 10000"
+            value={form.cartridge_rated_yield_pages}
+            onChange={set('cartridge_rated_yield_pages')}
+          />
+        </div>
         <div className="col-span-2 space-y-1">
           <Label>Notes</Label>
           <Input placeholder="Optional notes..." value={form.notes} onChange={set('notes')} />
@@ -82,7 +129,7 @@ function AddReplacementForm({ printers, onDone }: { printers: any[]; onDone: () 
           size="sm"
           onClick={() => create.mutate()}
           isLoading={create.isPending}
-          disabled={!form.printer_id || !form.toner_id || !form.counter_reading_at_replacement}
+          disabled={!form.printer_id || !form.toner_id || !form.counter_reading_at_replacement || !form.cartridge_price_per_unit || !form.cartridge_rated_yield_pages}
         >
           Log Replacement
         </Button>
@@ -149,6 +196,7 @@ export default function TonerReplacementsPage() {
                 <th className="px-4 py-3 text-left">Printer</th>
                 <th className="px-4 py-3 text-left">Toner</th>
                 <th className="px-4 py-3 text-right">Counter</th>
+                <th className="px-4 py-3 text-right">Cart. Price</th>
                 <th className="px-4 py-3 text-right">Actual Yield</th>
                 <th className="px-4 py-3 text-right">Efficiency</th>
                 <th className="px-4 py-3 text-right">Actions</th>
@@ -165,6 +213,9 @@ export default function TonerReplacementsPage() {
                     {r.toner_color ? `${r.toner_color}${r.toner_type ? ` (${r.toner_type})` : ''}` : `Toner #${r.toner_id}`}
                   </td>
                   <td className="px-4 py-3 text-right text-muted-foreground">{r.counter_reading_at_replacement.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right text-muted-foreground">
+                    {r.cartridge_price_per_unit != null ? `${r.cartridge_currency ?? 'INR'} ${parseFloat(r.cartridge_price_per_unit).toLocaleString()}` : '—'}
+                  </td>
                   <td className="px-4 py-3 text-right">
                     {r.actual_yield_pages != null ? r.actual_yield_pages.toLocaleString() : '—'}
                   </td>
