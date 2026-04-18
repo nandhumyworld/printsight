@@ -1,7 +1,7 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import type { LoginRequest, LoginResponse, RegisterRequest, User, UpdateProfileRequest } from '@/types';
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8001';
 
 export const api = axios.create({
   baseURL: `${API_URL}/api/v1`,
@@ -29,7 +29,7 @@ api.interceptors.response.use(
       original._retry = true;
       const refreshToken = localStorage.getItem('refresh_token');
       if (!refreshToken) {
-        window.location.href = '/login';
+        if (window.location.pathname !== '/login') window.location.href = '/login';
         return Promise.reject(error);
       }
       if (isRefreshing) {
@@ -54,7 +54,7 @@ api.interceptors.response.use(
       } catch {
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
-        window.location.href = '/login';
+        if (window.location.pathname !== '/login') window.location.href = '/login';
         return Promise.reject(error);
       } finally {
         isRefreshing = false;

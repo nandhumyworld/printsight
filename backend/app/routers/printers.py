@@ -146,9 +146,9 @@ async def purge(printer_id: int, body: PurgeBody, current_user: OwnerUser, db: S
 @router.post("/{printer_id}/image")
 async def upload_image(
     printer_id: int,
-    file: UploadFile = File(...),
-    current_user: OwnerUser = Depends(),
+    current_user: OwnerUser,
     db: Session = Depends(get_db),
+    file: UploadFile = File(...),
 ):
     p = _get_printer_or_404(db, printer_id, current_user.id)
     if p.image_url:
@@ -227,9 +227,9 @@ async def export_mapping(printer_id: int, current_user: CurrentUser, db: Session
 @router.post("/{printer_id}/mapping/import/preview")
 async def preview_mapping_import(
     printer_id: int,
-    file: UploadFile = File(...),
-    current_user: OwnerUser = Depends(),
+    current_user: OwnerUser,
     db: Session = Depends(get_db),
+    file: UploadFile = File(...),
 ):
     import json
     p = _get_printer_or_404(db, printer_id, current_user.id)
@@ -246,9 +246,9 @@ async def preview_mapping_import(
 @router.post("/{printer_id}/mapping/import/apply")
 async def apply_mapping_import(
     printer_id: int,
-    file: UploadFile = File(...),
-    current_user: OwnerUser = Depends(),
+    current_user: OwnerUser,
     db: Session = Depends(get_db),
+    file: UploadFile = File(...),
 ):
     import json
     p = _get_printer_or_404(db, printer_id, current_user.id)

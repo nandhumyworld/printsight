@@ -22,7 +22,7 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 DATABASE_URL: str = os.getenv(
     "DATABASE_URL",
     "postgresql://postgres:postgres@localhost:5432/printsight",
-)
+).replace("postgres://", "postgresql://", 1)
 
 # ``pool_pre_ping`` enables liveness checks to avoid stale-connection errors
 # after the database restarts or a firewall closes idle sockets.

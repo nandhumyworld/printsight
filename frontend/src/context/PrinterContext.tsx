@@ -20,6 +20,10 @@ export function PrinterProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   const loadPrinters = useCallback(async () => {
+    if (!localStorage.getItem('access_token')) {
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     try {
       const { data: response } = await api.get<ApiResponse<Printer[]>>('/printers');
