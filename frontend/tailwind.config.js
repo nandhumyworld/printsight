@@ -24,6 +24,16 @@ export default {
           foreground: 'hsl(var(--card-foreground))',
         },
         input: 'hsl(var(--border))',
+        accent: {
+          DEFAULT: 'hsl(var(--accent))',
+          foreground: 'hsl(var(--accent-foreground))',
+        },
+      },
+      backgroundImage: {
+        'gradient-kpi-blue':    'linear-gradient(135deg, #3b82f6, #06b6d4)',
+        'gradient-kpi-violet':  'linear-gradient(135deg, #8b5cf6, #a855f7)',
+        'gradient-kpi-amber':   'linear-gradient(135deg, #f59e0b, #f97316)',
+        'gradient-kpi-emerald': 'linear-gradient(135deg, #10b981, #14b8a6)',
       },
       borderRadius: { lg: 'var(--radius)', md: 'calc(var(--radius) - 2px)', sm: 'calc(var(--radius) - 4px)' },
     },
