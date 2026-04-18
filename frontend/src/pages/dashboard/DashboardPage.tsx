@@ -1,53 +1,68 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/services/api';
 import { formatCurrency, formatPercent } from '@/lib/utils';
-import { BarChart3, FileText, Printer, TrendingDown, TrendingUp, AlertTriangle } from 'lucide-react';
+import { BarChart3, FileText, Printer, AlertTriangle } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { KpiCard } from '@/components/charts/KpiCard';
+import { CostBreakdownChart } from '@/components/charts/CostBreakdownChart';
+import { usePrinter } from '@/context/PrinterContext';
 
 const PERIODS = [
-  { label: '7 days', value: '7d' },
-  { label: '30 days', value: '30d' },
-  { label: '90 days', value: '90d' },
+  { label: 'Day',   value: '1d' },
+  { label: 'Week',  value: '7d' },
+  { label: 'Month', value: '30d' },
+  { label: 'Year',  value: '365d' },
 ];
 
-function StatCard({ title, value, sub, icon: Icon, color }: { title: string; value: string; sub?: string; icon: any; color: string }) {
-  return (
-    <div className="rounded-lg border bg-card p-5">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">{title}</p>
-        <div className={`rounded-full p-2 ${color}`}>
-          <Icon className="h-4 w-4" />
-        </div>
-      </div>
-      <p className="mt-2 text-2xl font-bold">{value}</p>
-      {sub && <p className="mt-1 text-xs text-muted-foreground">{sub}</p>}
-    </div>
-  );
-}
+const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8001';
 
 export default function DashboardPage() {
   const [period, setPeriod] = useState('30d');
   const navigate = useNavigate();
+  const { selectedPrinter } = usePrinter();
+
+  const printerParam = selectedPrinter ? `&printer_id=${selectedPrinter.id}` : '';
 
   const { data: summary, isLoading: summaryLoading } = useQuery({
-    queryKey: ['analytics-summary', period],
-    queryFn: () => api.get(`/analytics/summary?period=${period}`).then(r => r.data.data),
+    queryKey: ['analytics-summary', period, selectedPrinter?.id],
+    queryFn: () => api.get(`/analytics/summary?period=${period}${printerParam}`).then(r => r.data.data),
   });
 
   const { data: trends, isLoading: trendsLoading } = useQuery({
-    queryKey: ['analytics-trends', period],
-    queryFn: () => api.get(`/analytics/trends?period=${period}`).then(r => r.data.data),
+    queryKey: ['analytics-trends', period, selectedPrinter?.id],
+    queryFn: () => api.get(`/analytics/trends?period=${period}${printerParam}`).then(r => r.data.data),
   });
 
-  const { data: printers } = useQuery({
-    queryKey: ['printers'],
-    queryFn: () => api.get('/printers').then(r => r.data.data),
-  });
+  const heroImage = selectedPrinter?.image_url
+    ? `${API_BASE}${selectedPrinter.image_url}`
+    : null;
 
   return (
     <div className="space-y-6">
+      {/* Hero banner */}
+      {selectedPrinter && (
+        <div
+          className="relative flex h-28 items-end overflow-hidden rounded-xl bg-gradient-to-r from-slate-800 to-slate-600 px-6 pb-4 shadow-sm"
+          style={heroImage ? { backgroundImage: `url(${heroImage})`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}}
+        >
+          <div className="absolute inset-0 bg-black/40 rounded-xl" />
+          <div className="relative z-10">
+            <p className="text-xs font-medium text-white/70 uppercase tracking-wide">Selected Printer</p>
+            <h2 className="text-xl font-bold text-white">{selectedPrinter.name}</h2>
+            {selectedPrinter.model && <p className="text-sm text-white/70">{selectedPrinter.model}</p>}
+          </div>
+          <button
+            onClick={() => navigate(`/printers/${selectedPrinter.id}`)}
+            className="relative z-10 ml-auto rounded-md bg-white/20 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/30 transition-colors"
+          >
+            Manage →
+          </button>
+        </div>
+      )}
+
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Dashboard</h1>
@@ -66,48 +81,63 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Stats */}
+      {/* KPI cards */}
       {summaryLoading ? (
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-28 rounded-lg border bg-card animate-pulse" />
-          ))}
+          {[...Array(4)].map((_, i) => <div key={i} className="h-28 rounded-xl animate-pulse bg-muted" />)}
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-          <StatCard
+          <KpiCard
             title="Total Cost"
             value={formatCurrency(summary?.total_cost ?? 0)}
             sub={`${summary?.total_jobs ?? 0} jobs`}
             icon={BarChart3}
-            color="bg-blue-100 text-blue-600"
+            gradient="from-blue-500 to-cyan-400"
           />
-          <StatCard
+          <KpiCard
             title="Total Pages"
             value={(summary?.total_pages ?? 0).toLocaleString()}
-            sub={`Cost/page: ${formatCurrency(summary?.cost_per_page ?? 0)}`}
+            sub={`₹${(summary?.cost_per_page ?? 0).toFixed(4)}/page`}
             icon={FileText}
-            color="bg-green-100 text-green-600"
+            gradient="from-violet-500 to-purple-400"
           />
-          <StatCard
+          <KpiCard
             title="Waste Cost"
             value={formatCurrency(summary?.waste_cost ?? 0)}
-            sub={`${formatPercent(summary?.waste_pct ?? 0)} of total pages`}
+            sub={`${formatPercent(summary?.waste_pct ?? 0)} of pages`}
             icon={AlertTriangle}
-            color="bg-amber-100 text-amber-600"
+            gradient="from-amber-500 to-orange-400"
           />
-          <StatCard
+          <KpiCard
             title="Color vs B&W"
             value={`${formatPercent(summary?.color_pct ?? 0)} color`}
             sub={`${(summary?.color_pages ?? 0).toLocaleString()} color / ${(summary?.bw_pages ?? 0).toLocaleString()} B&W`}
             icon={Printer}
-            color="bg-purple-100 text-purple-600"
+            gradient="from-emerald-500 to-teal-400"
           />
         </div>
       )}
 
-      {/* Trend Chart */}
-      <div className="rounded-lg border bg-card p-5">
+      {/* Cost breakdown grouped bar */}
+      <div className="rounded-xl border bg-card p-5">
+        <h2 className="mb-4 font-semibold">Paper vs Toner Cost</h2>
+        {trendsLoading ? (
+          <div className="h-64 animate-pulse rounded bg-muted" />
+        ) : trends && trends.length > 0 ? (
+          <CostBreakdownChart data={trends} />
+        ) : (
+          <div className="flex h-64 items-center justify-center text-muted-foreground">
+            <div className="text-center">
+              <FileText className="mx-auto mb-2 h-10 w-10 opacity-30" />
+              <p>No data yet. Upload a CSV log to get started.</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Cost trend area chart */}
+      <div className="rounded-xl border bg-card p-5">
         <h2 className="mb-4 font-semibold">Cost Trend</h2>
         {trendsLoading ? (
           <div className="h-64 animate-pulse rounded bg-muted" />
@@ -119,66 +149,11 @@ export default function DashboardPage() {
               <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `₹${v}`} />
               <Tooltip formatter={(v: number) => formatCurrency(v)} />
               <Area type="monotone" dataKey="total_cost" name="Total Cost" stroke="hsl(var(--primary))" fill="hsl(var(--primary) / 0.1)" strokeWidth={2} />
-              <Area type="monotone" dataKey="waste_cost" name="Waste Cost" stroke="hsl(var(--destructive))" fill="hsl(var(--destructive) / 0.1)" strokeWidth={2} />
+              <Area type="monotone" dataKey="waste_cost" name="Waste Cost" stroke="#f97316" fill="rgba(249,115,22,0.1)" strokeWidth={2} />
             </AreaChart>
           </ResponsiveContainer>
-        ) : (
-          <div className="flex h-64 items-center justify-center text-muted-foreground">
-            <div className="text-center">
-              <FileText className="mx-auto mb-2 h-10 w-10 opacity-30" />
-              <p>No data yet. Upload a CSV log to get started.</p>
-              {printers && printers.length > 0 && (
-                <button onClick={() => navigate('/printers')} className="mt-2 text-sm text-primary hover:underline">
-                  Go to Printers →
-                </button>
-              )}
-            </div>
-          </div>
-        )}
+        ) : null}
       </div>
-
-      {/* Printers Quick View */}
-      {printers && printers.length > 0 && (
-        <div className="rounded-lg border bg-card p-5">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-semibold">Printers</h2>
-            <button onClick={() => navigate('/printers')} className="text-sm text-primary hover:underline">
-              View all →
-            </button>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {printers.slice(0, 6).map((p: any) => (
-              <div
-                key={p.id}
-                onClick={() => navigate(`/printers/${p.id}`)}
-                className="cursor-pointer rounded-md border p-3 hover:border-primary hover:bg-muted/50 transition-colors"
-              >
-                <div className="flex items-center gap-2">
-                  <Printer className="h-4 w-4 text-muted-foreground" />
-                  <span className="font-medium text-sm">{p.name}</span>
-                  {!p.is_active && <span className="ml-auto rounded-full bg-destructive/10 px-2 py-0.5 text-xs text-destructive">Inactive</span>}
-                </div>
-                {p.model && <p className="mt-1 text-xs text-muted-foreground">{p.model}</p>}
-                {p.location && <p className="text-xs text-muted-foreground">{p.location}</p>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {printers && printers.length === 0 && (
-        <div className="rounded-lg border-2 border-dashed p-10 text-center">
-          <Printer className="mx-auto mb-3 h-12 w-12 text-muted-foreground/50" />
-          <h3 className="font-semibold">No printers yet</h3>
-          <p className="mt-1 text-sm text-muted-foreground">Add your first printer to start tracking costs.</p>
-          <button
-            onClick={() => navigate('/printers/new')}
-            className="mt-4 rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90"
-          >
-            Add Printer
-          </button>
-        </div>
-      )}
     </div>
   );
 }
