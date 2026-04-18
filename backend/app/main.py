@@ -1,11 +1,13 @@
 """FastAPI application entrypoint for PrintSight."""
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import Base, engine
@@ -68,6 +70,9 @@ async def validation_handler(request: Request, exc: AppValidationError) -> JSONR
 async def health() -> dict[str, str]:
     return {"status": "ok", "service": settings.app_name}
 
+
+os.makedirs("uploads/printers", exist_ok=True)
+app.mount("/uploads/printers", StaticFiles(directory="uploads/printers"), name="printer_images")
 
 # Routers
 from app.routers.auth import router as auth_router
