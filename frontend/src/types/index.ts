@@ -56,6 +56,8 @@ export interface Paper {
   display_name: string | null;
   length_mm: number | null;
   width_mm: number | null;
+  length_tolerance_mm: number;
+  width_tolerance_mm: number;
   gsm_min: number | null;
   gsm_max: number | null;
   counter_multiplier: number;
@@ -63,7 +65,20 @@ export interface Paper {
   currency: string;
   created_at: string;
 }
-export interface PaperCreate { name: string; display_name?: string; length_mm?: number; width_mm?: number; gsm_min?: number; gsm_max?: number; counter_multiplier?: number; price_per_sheet: number; currency?: string; }
+export interface PaperCreate {
+  name: string;
+  display_name?: string;
+  length_mm?: number;
+  width_mm?: number;
+  length_tolerance_mm?: number;
+  width_tolerance_mm?: number;
+  gsm_min?: number;
+  gsm_max?: number;
+  counter_multiplier?: number;
+  price_per_sheet: number;
+  currency?: string;
+  printer_ids?: number[];
+}
 export interface PaperUpdate extends Partial<PaperCreate> {}
 
 // ===== Toners =====
@@ -87,9 +102,14 @@ export interface TonerReplacementLog {
   id: number;
   printer_id: number;
   toner_id: number;
+  toner_color: string | null;
+  toner_type: string | null;
   replaced_by_user_id: number;
   counter_reading_at_replacement: number;
   replaced_at: string;
+  cartridge_price_per_unit: number;
+  cartridge_rated_yield_pages: number;
+  cartridge_currency: string;
   actual_yield_pages: number | null;
   yield_efficiency_pct: number | null;
   notes: string | null;
@@ -97,7 +117,15 @@ export interface TonerReplacementLog {
   toner?: Toner;
   replaced_by?: User;
 }
-export interface TonerReplacementCreate { toner_id: number; counter_reading_at_replacement: number; replaced_at: string; notes?: string; }
+export interface TonerReplacementCreate {
+  toner_id: number;
+  counter_reading_at_replacement: number;
+  replaced_at: string;
+  cartridge_price_per_unit: number;
+  cartridge_rated_yield_pages: number;
+  cartridge_currency?: string;
+  notes?: string;
+}
 
 // ===== Upload =====
 export type UploadSource = 'manual' | 'api_push';
