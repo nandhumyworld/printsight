@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/services/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ArrowLeft, Save } from 'lucide-react';
+import { ColumnMappingExportImport } from '@/components/printers/ColumnMappingExportImport';
 
 interface FieldDef {
   key: string;
@@ -78,6 +79,7 @@ const FIELD_GROUPS: FieldGroup[] = [
 export default function ColumnMappingPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -122,12 +124,20 @@ export default function ColumnMappingPage() {
         <button onClick={() => navigate(`/printers/${id}`)} className="text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-5 w-5" />
         </button>
-        <div>
+        <div className="flex-1">
           <h1 className="text-2xl font-bold">Column Mapping</h1>
           <p className="text-sm text-muted-foreground">
             {printer?.name} — map your CSV column headers to PrintSight fields
           </p>
         </div>
+        {id && (
+          <ColumnMappingExportImport
+            printerId={id}
+            onApplied={() => {
+              qc.invalidateQueries({ queryKey: ['printer', id] });
+            }}
+          />
+        )}
       </div>
 
       {/* Instructions */}
