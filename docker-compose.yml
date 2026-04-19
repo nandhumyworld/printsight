@@ -11,6 +11,8 @@ services:
       - "8001:8000"
     command: >
       sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    labels:
+      - "traefik.enable=false"
 
   frontend:
     build:
@@ -24,3 +26,6 @@ services:
       - backend
     ports:
       - "3000:80"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.printsight-web.loadbalancer.server.port=80"
