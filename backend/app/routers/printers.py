@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -51,6 +52,7 @@ class TonerCreate(BaseModel):
     toner_type: str = "standard"
     price_per_unit: float
     rated_yield_pages: int
+    reference_coverage_pct: float = 5.00
     currency: str = "INR"
 
 
@@ -281,6 +283,7 @@ async def create_toner(printer_id: int, body: TonerCreate, current_user: OwnerUs
         toner_type=TonerType(body.toner_type),
         price_per_unit=body.price_per_unit,
         rated_yield_pages=body.rated_yield_pages,
+        reference_coverage_pct=Decimal(str(body.reference_coverage_pct)),
         currency=body.currency,
     )
     db.add(t)
@@ -297,12 +300,13 @@ async def update_toner(printer_id: int, toner_id: int, body: TonerCreate, curren
         raise HTTPException(status_code=404, detail="Toner not found")
     t.toner_color = body.toner_color
     t.toner_type = TonerType(body.toner_type)
-    t.price_per_unit = body.price_per_unit
+    t.price_per_unit = Decimal(str(body.price_per_unit))
     t.rated_yield_pages = body.rated_yield_pages
+    t.reference_coverage_pct = Decimal(str(body.reference_coverage_pct))
     t.currency = body.currency
     db.commit()
     db.refresh(t)
-    return {"data": _toner_out(t), "message": "Toner updated"}
+    return {"data": _toner_out(t), "message": "Toner updated", "recompute_hint": True}
 
 
 @router.delete("/{printer_id}/toners/{toner_id}", status_code=204)
@@ -315,6 +319,49 @@ async def delete_toner(printer_id: int, toner_id: int, current_user: OwnerUser, 
     db.commit()
 
 
+@router.get("/{printer_id}/paper-suggestions")
+async def paper_suggestions(
+    printer_id: int,
+    current_user: CurrentUser,
+    db: Session = Depends(get_db),
+):
+    _get_printer_or_404(db, printer_id, current_user.id)
+    from sqlalchemy import func
+    from app.models.upload import PrintJob
+    rows = (
+        db.query(
+            PrintJob.paper_type,
+            PrintJob.paper_width_mm,
+            PrintJob.paper_length_mm,
+            PrintJob.paper_gsm,
+            func.count(PrintJob.id).label("job_count"),
+        )
+        .filter(PrintJob.printer_id == printer_id, PrintJob.paper_type.isnot(None))
+        .group_by(
+            PrintJob.paper_type,
+            PrintJob.paper_width_mm,
+            PrintJob.paper_length_mm,
+            PrintJob.paper_gsm,
+        )
+        .order_by(func.count(PrintJob.id).desc())
+        .limit(50)
+        .all()
+    )
+    return {
+        "data": [
+            {
+                "paper_type": r.paper_type,
+                "width_mm": float(r.paper_width_mm) if r.paper_width_mm else None,
+                "length_mm": float(r.paper_length_mm) if r.paper_length_mm else None,
+                "gsm": r.paper_gsm,
+                "job_count": r.job_count,
+            }
+            for r in rows
+        ],
+        "message": "ok",
+    }
+
+
 def _toner_out(t: Toner) -> dict[str, Any]:
     return {
         "id": t.id,
@@ -323,6 +370,7 @@ def _toner_out(t: Toner) -> dict[str, Any]:
         "toner_type": t.toner_type.value,
         "price_per_unit": float(t.price_per_unit),
         "rated_yield_pages": t.rated_yield_pages,
+        "reference_coverage_pct": float(t.reference_coverage_pct),
         "currency": t.currency,
         "created_at": t.created_at.isoformat(),
     }

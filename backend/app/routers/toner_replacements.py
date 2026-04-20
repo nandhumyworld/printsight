@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -108,6 +108,7 @@ async def create_replacement(
         replaced_at=replaced_at,
         cartridge_price_per_unit=Decimal(str(body.cartridge_price_per_unit)),
         cartridge_rated_yield_pages=body.cartridge_rated_yield_pages,
+        cartridge_reference_coverage_pct=Decimal(str(toner.reference_coverage_pct)),
         cartridge_currency=body.cartridge_currency,
         actual_yield_pages=actual_yield,
         yield_efficiency_pct=efficiency_pct,
@@ -116,7 +117,34 @@ async def create_replacement(
     db.add(log)
     db.commit()
     db.refresh(log)
-    return {"data": _log_out(log), "message": "Replacement logged"}
+
+    # Auto-recompute costs for jobs printed after this replacement
+    from app.models.paper import Paper
+    from app.models.upload import PrintJob
+    from app.services.cost_calc import compute_job_cost, match_paper_for_job
+    from datetime import timezone
+
+    papers = db.query(Paper).join(Paper.printer_links).filter_by(printer_id=body.printer_id).all()
+    all_toners = db.query(Toner).filter(Toner.printer_id == body.printer_id).all()
+    for t in all_toners:
+        _ = t.replacement_logs
+    jobs = db.query(PrintJob).filter(
+        PrintJob.printer_id == body.printer_id,
+        PrintJob.recorded_at >= replaced_at,
+    ).all()
+    for job in jobs:
+        matched = match_paper_for_job(job, papers)
+        job.matched_paper_id = matched.id if matched else None
+        cr = compute_job_cost(job, toners=all_toners, matched_paper=matched)
+        job.computed_paper_cost = Decimal(str(cr["paper_cost"]))
+        job.computed_toner_cost = Decimal(str(cr["toner_cost"]))
+        job.computed_total_cost = Decimal(str(cr["total_cost"]))
+        job.computed_toner_cost_breakdown = cr["breakdown"]
+        job.cost_computation_source = cr["source"]
+        job.cost_computed_at = datetime.now(timezone.utc)
+    db.commit()
+
+    return {"data": _log_out(log), "message": "Replacement logged", "recompute_hint": True}
 
 
 @router.get("/yield-summary")
