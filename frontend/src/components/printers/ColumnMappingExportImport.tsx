@@ -17,9 +17,18 @@ export function ColumnMappingExportImport({ printerId, onApplied }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleExport = () => {
-    const base = import.meta.env.VITE_API_URL ?? 'http://localhost:8001';
-    window.open(`${base}/api/v1/printers/${printerId}/mapping/export`, '_blank');
+  const handleExport = async () => {
+    try {
+      const { data } = await api.get(`/printers/${printerId}/mapping/export`, { responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `mapping_printer_${printerId}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      // silently ignore — user will see nothing downloaded
+    }
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {

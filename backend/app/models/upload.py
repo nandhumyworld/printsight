@@ -188,6 +188,85 @@ class PrintJob(Base):
         Integer, nullable=False, default=0, server_default="0"
     )
     error_info: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Extended CSV fields — job metadata
+    sub_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    jdf_job_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    jdf_job_part_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    logical_printer: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    template: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    imposition_settings: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    media_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    paper_tray: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    print_collation: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    imposed_pages: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    last_printed_page: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    banner_sheet: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    change_output_destination: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    account: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    comments: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    folder: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    tag: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
+    # Extended CSV fields — timing
+    conversion_start_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    conversion_elapsed: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    rip_start_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    rip_elapsed: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    rasterization_start_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    rasterization_elapsed: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    printing_start_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    printing_elapsed: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+
+    # Extended CSV fields — specialty toner pages
+    pa_pages: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    gold_6_pages: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    silver_6_pages: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    white_6_pages: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    pink_6_pages: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    # Extended CSV fields — raster coverage CMYK
+    coverage_k: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+    coverage_c: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+    coverage_m: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+    coverage_y: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+
+    # Extended CSV fields — raster coverage specialty #1
+    coverage_gld_1: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+    coverage_slv_1: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+    coverage_clr_1: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+    coverage_wht_1: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+    coverage_cr_1: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+    coverage_p_1: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+    coverage_pa_1: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+
+    # Extended CSV fields — raster coverage specialty #6
+    coverage_gld_6: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+    coverage_slv_6: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+    coverage_wht_6: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+    coverage_p_6: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+
+    # Extended CSV fields — raster coverage estimation CMYK
+    coverage_est_k: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+    coverage_est_c: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+    coverage_est_m: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+    coverage_est_y: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+
+    # Extended CSV fields — raster coverage estimation specialty #1
+    coverage_est_gld_1: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+    coverage_est_slv_1: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+    coverage_est_clr_1: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+    coverage_est_wht_1: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+    coverage_est_cr_1: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+    coverage_est_p_1: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+    coverage_est_pa_1: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+
+    # Extended CSV fields — raster coverage estimation specialty #6
+    coverage_est_gld_6: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+    coverage_est_slv_6: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+    coverage_est_wht_6: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+    coverage_est_p_6: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 4), nullable=True)
+
     computed_paper_cost: Mapped[Decimal] = mapped_column(
         Numeric(12, 4), nullable=False, default=Decimal("0"), server_default="0"
     )
