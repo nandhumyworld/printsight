@@ -1,8 +1,4 @@
 services:
-  postgres:
-    ports:
-      - "5432:5432"
-
   backend:
     build:
       context: ./backend
@@ -11,8 +7,7 @@ services:
       - ./backend:/app
     command: >
       sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
-    environment:
-      APP_ENV: development
+    env_file: .env
 
   frontend:
     image: node:20-alpine
@@ -24,7 +19,7 @@ services:
     ports:
       - "5173:5173"
     environment:
-      VITE_API_URL: http://localhost:8000
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:8001}
 
 volumes:
   frontend_nm:

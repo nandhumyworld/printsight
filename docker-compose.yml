@@ -5,8 +5,7 @@ services:
       dockerfile: Dockerfile
     container_name: printsight-api
     restart: unless-stopped
-    environment:
-      DATABASE_URL: ${DATABASE_URL}
+    env_file: .env
     ports:
       - "8001:8000"
     command: >
@@ -19,7 +18,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8001}
     container_name: printsight-web
     restart: unless-stopped
     depends_on:

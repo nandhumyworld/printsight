@@ -6,15 +6,18 @@ variables directly elsewhere.
 """
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_env_file = Path(__file__).parents[2] / ".env"
 
 
 class Settings(BaseSettings):
     """Typed application settings loaded from environment / ``.env``."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(_env_file) if _env_file.exists() else None,
         case_sensitive=False,
         extra="ignore",
     )
