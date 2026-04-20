@@ -29,7 +29,7 @@ MAX_BYTES = settings.max_csv_upload_size_mb * 1024 * 1024
 
 
 def _get_printer_or_403(db: Session, printer_id: int, owner_id: int) -> Printer:
-    p = db.query(Printer).filter(Printer.id == printer_id, Printer.owner_id == owner_id).first()
+    p = db.query(Printer).filter(Printer.id == printer_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Printer not found")
     return p
@@ -600,7 +600,7 @@ async def list_jobs(
     per_page: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
 ):
-    p = db.query(Printer).filter(Printer.id == printer_id, Printer.owner_id == current_user.id).first()
+    p = db.query(Printer).filter(Printer.id == printer_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Printer not found")
 

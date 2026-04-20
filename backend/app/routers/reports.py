@@ -37,7 +37,7 @@ def _build_query(
 ):
     # Resolve printer scope
     all_printer_ids = [
-        p.id for p in db.query(Printer.id).filter(Printer.owner_id == owner_id).all()
+        p.id for p in db.query(Printer.id).all()
     ]
     if not all_printer_ids:
         return None

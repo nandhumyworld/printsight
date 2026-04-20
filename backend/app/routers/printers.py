@@ -90,7 +90,7 @@ def _get_printer_or_404(db: Session, printer_id: int, owner_id: int) -> Printer:
 
 @router.get("")
 async def list_printers(current_user: CurrentUser, db: Session = Depends(get_db)):
-    printers = db.query(Printer).filter(Printer.owner_id == current_user.id).all()
+    printers = db.query(Printer).order_by(Printer.id).all()
     return {"data": [_printer_out(p) for p in printers], "message": "ok"}
 
 
@@ -105,7 +105,9 @@ async def create_printer(body: PrinterCreate, current_user: OwnerUser, db: Sessi
 
 @router.get("/{printer_id}")
 async def get_printer(printer_id: int, current_user: CurrentUser, db: Session = Depends(get_db)):
-    p = _get_printer_or_404(db, printer_id, current_user.id)
+    p = db.query(Printer).filter(Printer.id == printer_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Printer not found")
     return {"data": _printer_out(p), "message": "ok"}
 
 
@@ -185,7 +187,7 @@ async def list_linked_papers(printer_id: int, current_user: CurrentUser, db: Ses
 @router.post("/{printer_id}/papers/{paper_id}", status_code=201)
 async def link_paper(printer_id: int, paper_id: int, current_user: OwnerUser, db: Session = Depends(get_db)):
     _get_printer_or_404(db, printer_id, current_user.id)
-    paper = db.query(Paper).filter(Paper.id == paper_id, Paper.owner_id == current_user.id).first()
+    paper = db.query(Paper).filter(Paper.id == paper_id).first()
     if not paper:
         raise HTTPException(status_code=404, detail="Paper not found")
     existing = db.query(PrinterPaper).filter(

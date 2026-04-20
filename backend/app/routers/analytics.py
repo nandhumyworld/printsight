@@ -87,7 +87,7 @@ async def summary(
     printer_id: Optional[int] = Query(None),
 ):
     start, end = _resolve_range(period, start_date, end_date)
-    printer_ids = [p.id for p in db.query(Printer.id).filter(Printer.owner_id == current_user.id).all()]
+    printer_ids = [p.id for p in db.query(Printer.id).all()]
     if not printer_ids:
         return {"data": _empty_summary(period), "message": "ok"}
 
@@ -147,7 +147,7 @@ async def trends(
     if granularity == "auto":
         granularity = _auto_granularity(start, end)
 
-    printer_ids = [p.id for p in db.query(Printer.id).filter(Printer.owner_id == current_user.id).all()]
+    printer_ids = [p.id for p in db.query(Printer.id).all()]
     if not printer_ids:
         return {"data": [], "message": "ok"}
 
@@ -194,7 +194,7 @@ async def printers_comparison(
     end_date: Optional[datetime] = Query(None),
 ):
     start, end = _resolve_range(period, start_date, end_date)
-    printers = db.query(Printer).filter(Printer.owner_id == current_user.id).all()
+    printers = db.query(Printer).all()
     result = []
     for p in printers:
         jobs = db.query(PrintJob).filter(
@@ -225,7 +225,7 @@ async def cost_breakdown(
     printer_id: Optional[int] = Query(None),
 ):
     start, end = _resolve_range(period, start_date, end_date)
-    printer_ids = [p.id for p in db.query(Printer.id).filter(Printer.owner_id == current_user.id).all()]
+    printer_ids = [p.id for p in db.query(Printer.id).all()]
     if not printer_ids:
         return {"data": {}, "message": "ok"}
 
@@ -267,7 +267,7 @@ async def toner_breakdown(
     if granularity == "auto":
         granularity = _auto_granularity(start, end)
 
-    printer_ids = [p.id for p in db.query(Printer.id).filter(Printer.owner_id == current_user.id).all()]
+    printer_ids = [p.id for p in db.query(Printer.id).all()]
     if not printer_ids:
         return {"data": [], "message": "ok"}
 
@@ -306,7 +306,7 @@ async def paper_breakdown(
     printer_id: Optional[int] = Query(None),
 ):
     start, end = _resolve_range(period, start_date, end_date)
-    printer_ids = [p.id for p in db.query(Printer.id).filter(Printer.owner_id == current_user.id).all()]
+    printer_ids = [p.id for p in db.query(Printer.id).all()]
     if not printer_ids:
         return {"data": [], "message": "ok"}
 
@@ -343,7 +343,7 @@ async def top_jobs(
     order: str = Query("cost", pattern="^(cost|pages|waste)$"),
 ):
     start, end = _resolve_range(period, start_date, end_date)
-    printer_ids = [p.id for p in db.query(Printer.id).filter(Printer.owner_id == current_user.id).all()]
+    printer_ids = [p.id for p in db.query(Printer.id).all()]
     if not printer_ids:
         return {"data": [], "message": "ok"}
 

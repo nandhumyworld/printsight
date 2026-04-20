@@ -47,6 +47,8 @@ const EmptyState = ({ message = "No data in the selected range." }: { message?: 
 export default function DashboardPage() {
   const [range, setRange] = useState<DateRange>({ start: defaultStart(), end: new Date() });
   const [selectedJob, setSelectedJob] = useState<any | null>(null);
+  const [selectedPaperTypes, setSelectedPaperTypes] = useState<string[]>([]);
+  const [paperDropdownOpen, setPaperDropdownOpen] = useState(false);
   const navigate = useNavigate();
   const { selectedPrinter } = usePrinter();
 
@@ -162,11 +164,74 @@ export default function DashboardPage() {
       {/* Paper donut + Toner bar */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div className="rounded-xl border bg-card p-5">
-          <h2 className="mb-4 font-semibold">Paper cost by type</h2>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h2 className="font-semibold">Paper cost by type</h2>
+            {!paperLoading && paperData && paperData.length > 0 && (
+              <div className="relative">
+                <button
+                  onClick={() => setPaperDropdownOpen(v => !v)}
+                  className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs hover:bg-muted/50"
+                >
+                  {selectedPaperTypes.length === 0
+                    ? 'Select types...'
+                    : `${selectedPaperTypes.length} selected`}
+                  <svg className={`h-3 w-3 transition-transform ${paperDropdownOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                </button>
+                {paperDropdownOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setPaperDropdownOpen(false)} />
+                    <div className="absolute right-0 top-full z-20 mt-1 max-h-60 w-56 overflow-y-auto rounded-md border bg-card shadow-lg">
+                      <div className="sticky top-0 border-b bg-card p-2">
+                        <button
+                          onClick={() => {
+                            setSelectedPaperTypes(paperData.map((d: any) => d.paper_type));
+                            setPaperDropdownOpen(false);
+                          }}
+                          className="w-full rounded px-2 py-1 text-left text-xs font-medium hover:bg-muted/50"
+                        >
+                          Select all
+                        </button>
+                        <button
+                          onClick={() => { setSelectedPaperTypes([]); setPaperDropdownOpen(false); }}
+                          className="w-full rounded px-2 py-1 text-left text-xs font-medium hover:bg-muted/50"
+                        >
+                          Clear selection
+                        </button>
+                      </div>
+                      {paperData.map((d: any) => (
+                        <label
+                          key={d.paper_type}
+                          className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-xs hover:bg-muted/30"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedPaperTypes.includes(d.paper_type)}
+                            onChange={() => {
+                              setSelectedPaperTypes(prev =>
+                                prev.includes(d.paper_type)
+                                  ? prev.filter(t => t !== d.paper_type)
+                                  : [...prev, d.paper_type],
+                              );
+                            }}
+                            className="rounded"
+                          />
+                          <span className="truncate">{d.paper_type}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
           {paperLoading ? (
             <div className="h-64 animate-pulse rounded bg-muted" />
+          ) : selectedPaperTypes.length > 0 && paperData ? (
+            <PaperDonut3D data={paperData.filter((d: any) => selectedPaperTypes.includes(d.paper_type))} />
           ) : paperData && paperData.length > 0 ? (
-            <PaperDonut3D data={paperData} />
+            <div className="flex h-64 items-center justify-center text-muted-foreground">
+              <p className="text-sm">Select paper types from the dropdown above to compare costs.</p>
+            </div>
           ) : (
             <EmptyState />
           )}

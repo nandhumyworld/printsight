@@ -57,7 +57,7 @@ async def list_replacements(
 ):
     # Get printer IDs owned by user
     from app.models.printer import Printer
-    owner_printer_ids = [p.id for p in db.query(Printer.id).filter(Printer.owner_id == current_user.id).all()]
+    owner_printer_ids = [p.id for p in db.query(Printer.id).all()]
 
     from sqlalchemy.orm import joinedload
     q = db.query(TonerReplacementLog).options(joinedload(TonerReplacementLog.toner)).filter(TonerReplacementLog.printer_id.in_(owner_printer_ids))
@@ -73,7 +73,7 @@ async def create_replacement(
     current_user: CurrentUser,
     db: Session = Depends(get_db),
 ):
-    printer = db.query(Printer).filter(Printer.id == body.printer_id, Printer.owner_id == current_user.id).first()
+    printer = db.query(Printer).filter(Printer.id == body.printer_id).first()
     if not printer:
         raise HTTPException(status_code=404, detail="Printer not found")
 
@@ -217,7 +217,7 @@ async def delete_replacement(log_id: int, current_user: CurrentUser, db: Session
     if not log:
         raise HTTPException(status_code=404, detail="Log not found")
     # Verify ownership via printer
-    printer = db.query(Printer).filter(Printer.id == log.printer_id, Printer.owner_id == current_user.id).first()
+    printer = db.query(Printer).filter(Printer.id == log.printer_id).first()
     if not printer:
         raise HTTPException(status_code=403, detail="Forbidden")
     db.delete(log)
