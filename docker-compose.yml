@@ -20,6 +20,8 @@ services:
       args:
         VITE_API_URL: ${VITE_API_URL}
     restart: unless-stopped
+    expose:
+      - "80"
     depends_on:
       - backend
     networks:
