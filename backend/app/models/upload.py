@@ -276,6 +276,15 @@ class PrintJob(Base):
     computed_total_cost: Mapped[Decimal] = mapped_column(
         Numeric(12, 4), nullable=False, default=Decimal("0"), server_default="0"
     )
+    computed_toner_cost_breakdown: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
+    cost_computed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    cost_computation_source: Mapped[Optional[str]] = mapped_column(
+        String(20), nullable=True
+    )
     is_waste: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )

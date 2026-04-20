@@ -50,6 +50,9 @@ class Toner(Base, TimestampMixin):
     )
     price_per_unit: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     rated_yield_pages: Mapped[int] = mapped_column(Integer, nullable=False)
+    reference_coverage_pct: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), nullable=False, default=Decimal("5.00"), server_default="5.00"
+    )
     currency: Mapped[str] = mapped_column(
         String(10), nullable=False, default="INR", server_default="INR"
     )
@@ -91,6 +94,9 @@ class TonerReplacementLog(Base):
         Numeric(10, 2), nullable=False
     )
     cartridge_rated_yield_pages: Mapped[int] = mapped_column(Integer, nullable=False)
+    cartridge_reference_coverage_pct: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), nullable=False, default=Decimal("5.00"), server_default="5.00"
+    )
     cartridge_currency: Mapped[str] = mapped_column(
         String(10), nullable=False, default="INR", server_default="INR"
     )
