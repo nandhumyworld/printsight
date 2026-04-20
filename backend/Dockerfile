@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 COPY --from=builder /install /usr/local
 COPY --chown=app:app . .
+RUN mkdir -p uploads/printers && chown -R app:app uploads
 USER app
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 EXPOSE 8000
