@@ -19,7 +19,7 @@ from app.models.paper import Paper
 from app.models.printer import Printer
 from app.models.toner import Toner, TonerReplacementLog
 from app.models.upload import PrintJob, UploadBatch, UploadSource, UploadStatus
-from app.services.cost_calc import compute_job_cost, match_paper_for_job
+from app.services.cost_calc import compute_job_cost, match_paper_for_job  # noqa: F401 (used in recompute)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/printers/{printer_id}/uploads", tags=["print-jobs"])
@@ -47,6 +47,24 @@ def _parse_decimal(val: Any, default: Decimal = Decimal("0")) -> Decimal:
         return Decimal(str(val)) if val is not None and str(val).strip() != "" else default
     except Exception:
         return default
+
+
+_COVERAGE_MAX = Decimal("9999.9999")
+
+
+def _parse_coverage(val: Any) -> Decimal | None:
+    """Parse a coverage decimal and clamp to Numeric(8,4) range. Returns None if unparseable."""
+    if val is None or str(val).strip() in ("", "nan", "none"):
+        return None
+    try:
+        d = Decimal(str(val).strip())
+        if d < 0:
+            return None
+        if d > _COVERAGE_MAX:
+            return _COVERAGE_MAX
+        return d
+    except Exception:
+        return None
 
 
 def _parse_dt(val: Any) -> datetime | None:
@@ -166,6 +184,124 @@ def _str_or_none(val: Any) -> str | None:
     return s if s and s.lower() not in ("nan", "none") else None
 
 
+import json as _json_upload  # noqa: E402
+from fastapi.responses import StreamingResponse as _StreamingResponseUpload  # noqa: E402
+
+_UPLOAD_BATCH = 500
+
+
+def _build_job(row, mapping, printer_id, batch_id) -> PrintJob:
+    """Build a PrintJob ORM object from a CSV row (no DB ops)."""
+    job_id_raw = _col(row, mapping, "job_id") or _col(row, mapping, "jobid") or _col(row, mapping, "id")
+    job_id = str(job_id_raw).strip()
+    recorded_at = _parse_dt(
+        _col(row, mapping, "recorded_at")
+        or _col(row, mapping, "printed_at")
+        or _col(row, mapping, "date")
+    )
+    status_val = _str_or_none(_col(row, mapping, "status", "")) or ""
+    color_pages = _parse_int(_col(row, mapping, "color_pages", 0))
+    bw_pages = _parse_int(_col(row, mapping, "bw_pages", 0))
+    printed_pages = _parse_int(_col(row, mapping, "printed_pages") or _col(row, mapping, "pages", 0))
+    if printed_pages == 0:
+        printed_pages = color_pages + bw_pages
+    pw = _col(row, mapping, "paper_width_mm")
+    pl = _col(row, mapping, "paper_length_mm")
+    return PrintJob(
+        printer_id=printer_id, upload_batch_id=batch_id, job_id=job_id,
+        job_name=_str_or_none(_col(row, mapping, "job_name", "")),
+        status=_str_or_none(status_val),
+        owner_name=_str_or_none(_col(row, mapping, "owner_name", "")),
+        recorded_at=recorded_at,
+        arrived_at=_parse_dt(_col(row, mapping, "arrived_at")),
+        printed_at=_parse_dt(_col(row, mapping, "printed_at")),
+        color_mode=_str_or_none(_col(row, mapping, "color_mode", "")),
+        paper_type=_str_or_none(_col(row, mapping, "paper_type", "")),
+        paper_size=_str_or_none(_col(row, mapping, "paper_size", "")),
+        paper_width_mm=_parse_decimal(pw) if pw and str(pw).strip() not in ("", "0", "nan") else None,
+        paper_length_mm=_parse_decimal(pl) if pl and str(pl).strip() not in ("", "0", "nan") else None,
+        is_duplex=_parse_bool(_col(row, mapping, "is_duplex")),
+        copies=_parse_int(_col(row, mapping, "copies", 1)) or 1,
+        input_pages=_parse_int(_col(row, mapping, "input_pages", 0)),
+        printed_pages=printed_pages, color_pages=color_pages, bw_pages=bw_pages,
+        specialty_pages=_parse_int(_col(row, mapping, "specialty_pages", 0)),
+        gold_pages=_parse_int(_col(row, mapping, "gold_pages", 0)),
+        silver_pages=_parse_int(_col(row, mapping, "silver_pages", 0)),
+        clear_pages=_parse_int(_col(row, mapping, "clear_pages", 0)),
+        white_pages=_parse_int(_col(row, mapping, "white_pages", 0)),
+        texture_pages=_parse_int(_col(row, mapping, "texture_pages", 0)),
+        pink_pages=_parse_int(_col(row, mapping, "pink_pages", 0)),
+        blank_pages=_parse_int(_col(row, mapping, "blank_pages", 0)),
+        printed_sheets=_parse_int(_col(row, mapping, "printed_sheets", 0)),
+        waste_sheets=_parse_int(_col(row, mapping, "waste_sheets", 0)),
+        error_info=_str_or_none(_col(row, mapping, "error_info", "")),
+        is_waste=status_val.lower() in ("failed", "cancelled", "canceled", "error"),
+        sub_id=_str_or_none(_col(row, mapping, "sub_id", "")),
+        jdf_job_id=_str_or_none(_col(row, mapping, "jdf_job_id", "")),
+        jdf_job_part_id=_str_or_none(_col(row, mapping, "jdf_job_part_id", "")),
+        logical_printer=_str_or_none(_col(row, mapping, "logical_printer", "")),
+        template=_str_or_none(_col(row, mapping, "template", "")),
+        imposition_settings=_str_or_none(_col(row, mapping, "imposition_settings", "")),
+        media_name=_str_or_none(_col(row, mapping, "media_name", "")),
+        paper_tray=_str_or_none(_col(row, mapping, "paper_tray", "")),
+        print_collation=_str_or_none(_col(row, mapping, "print_collation", "")),
+        imposed_pages=_parse_int(_col(row, mapping, "imposed_pages")) or None,
+        last_printed_page=_str_or_none(_col(row, mapping, "last_printed_page", "")),
+        banner_sheet=_str_or_none(_col(row, mapping, "banner_sheet", "")),
+        change_output_destination=_str_or_none(_col(row, mapping, "change_output_destination", "")),
+        account=_str_or_none(_col(row, mapping, "account", "")),
+        comments=_str_or_none(_col(row, mapping, "comments", "")),
+        folder=_str_or_none(_col(row, mapping, "folder", "")),
+        tag=_str_or_none(_col(row, mapping, "tag", "")),
+        conversion_start_at=_parse_dt(_col(row, mapping, "conversion_start_at")),
+        conversion_elapsed=_str_or_none(_col(row, mapping, "conversion_elapsed", "")),
+        rip_start_at=_parse_dt(_col(row, mapping, "rip_start_at")),
+        rip_elapsed=_str_or_none(_col(row, mapping, "rip_elapsed", "")),
+        rasterization_start_at=_parse_dt(_col(row, mapping, "rasterization_start_at")),
+        rasterization_elapsed=_str_or_none(_col(row, mapping, "rasterization_elapsed", "")),
+        printing_start_at=_parse_dt(_col(row, mapping, "printing_start_at")),
+        printing_elapsed=_str_or_none(_col(row, mapping, "printing_elapsed", "")),
+        pa_pages=_parse_int(_col(row, mapping, "pa_pages", 0)),
+        gold_6_pages=_parse_int(_col(row, mapping, "gold_6_pages", 0)),
+        silver_6_pages=_parse_int(_col(row, mapping, "silver_6_pages", 0)),
+        white_6_pages=_parse_int(_col(row, mapping, "white_6_pages", 0)),
+        pink_6_pages=_parse_int(_col(row, mapping, "pink_6_pages", 0)),
+        coverage_k=_parse_coverage(_col(row, mapping, "coverage_k")),
+        coverage_c=_parse_coverage(_col(row, mapping, "coverage_c")),
+        coverage_m=_parse_coverage(_col(row, mapping, "coverage_m")),
+        coverage_y=_parse_coverage(_col(row, mapping, "coverage_y")),
+        coverage_gld_1=_parse_coverage(_col(row, mapping, "coverage_gld_1")),
+        coverage_slv_1=_parse_coverage(_col(row, mapping, "coverage_slv_1")),
+        coverage_clr_1=_parse_coverage(_col(row, mapping, "coverage_clr_1")),
+        coverage_wht_1=_parse_coverage(_col(row, mapping, "coverage_wht_1")),
+        coverage_cr_1=_parse_coverage(_col(row, mapping, "coverage_cr_1")),
+        coverage_p_1=_parse_coverage(_col(row, mapping, "coverage_p_1")),
+        coverage_pa_1=_parse_coverage(_col(row, mapping, "coverage_pa_1")),
+        coverage_gld_6=_parse_coverage(_col(row, mapping, "coverage_gld_6")),
+        coverage_slv_6=_parse_coverage(_col(row, mapping, "coverage_slv_6")),
+        coverage_wht_6=_parse_coverage(_col(row, mapping, "coverage_wht_6")),
+        coverage_p_6=_parse_coverage(_col(row, mapping, "coverage_p_6")),
+        coverage_est_k=_parse_coverage(_col(row, mapping, "coverage_est_k")),
+        coverage_est_c=_parse_coverage(_col(row, mapping, "coverage_est_c")),
+        coverage_est_m=_parse_coverage(_col(row, mapping, "coverage_est_m")),
+        coverage_est_y=_parse_coverage(_col(row, mapping, "coverage_est_y")),
+        coverage_est_gld_1=_parse_coverage(_col(row, mapping, "coverage_est_gld_1")),
+        coverage_est_slv_1=_parse_coverage(_col(row, mapping, "coverage_est_slv_1")),
+        coverage_est_clr_1=_parse_coverage(_col(row, mapping, "coverage_est_clr_1")),
+        coverage_est_wht_1=_parse_coverage(_col(row, mapping, "coverage_est_wht_1")),
+        coverage_est_cr_1=_parse_coverage(_col(row, mapping, "coverage_est_cr_1")),
+        coverage_est_p_1=_parse_coverage(_col(row, mapping, "coverage_est_p_1")),
+        coverage_est_pa_1=_parse_coverage(_col(row, mapping, "coverage_est_pa_1")),
+        coverage_est_gld_6=_parse_coverage(_col(row, mapping, "coverage_est_gld_6")),
+        coverage_est_slv_6=_parse_coverage(_col(row, mapping, "coverage_est_slv_6")),
+        coverage_est_wht_6=_parse_coverage(_col(row, mapping, "coverage_est_wht_6")),
+        coverage_est_p_6=_parse_coverage(_col(row, mapping, "coverage_est_p_6")),
+        computed_paper_cost=Decimal("0"),
+        computed_toner_cost=Decimal("0"),
+        computed_total_cost=Decimal("0"),
+    )
+
+
 @router.post("")
 async def upload_csv(
     printer_id: int,
@@ -173,6 +309,7 @@ async def upload_csv(
     db: Session = Depends(get_db),
     file: UploadFile = File(...),
 ):
+    """Upload CSV and stream SSE import progress events."""
     p = _get_printer_or_403(db, printer_id, current_user.id)
 
     if not file.filename or not file.filename.lower().endswith(".csv"):
@@ -188,228 +325,106 @@ async def upload_csv(
         raise HTTPException(status_code=400, detail=f"Could not parse CSV: {exc}")
 
     df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
-
-    # Build mapping: {field_key: normalized_csv_column}
     mapping: dict = {k.lower(): v.strip().lower().replace(" ", "_") for k, v in (p.column_mapping or {}).items()}
+    filename = file.filename
+    user_id = current_user.id
+    total_rows = len(df)
 
-    batch = UploadBatch(
-        printer_id=printer_id,
-        uploaded_by_user_id=current_user.id,
-        source=UploadSource.manual,
-        filename=file.filename,
-        rows_total=len(df),
-        status=UploadStatus.processing,
-    )
-    db.add(batch)
-    db.flush()
+    def _evt(payload: dict) -> str:
+        return f"data: {_json_upload.dumps(payload)}\n\n"
 
-    # Cache printer papers and toners for cost computation (loaded once per upload)
-    papers = (
-        db.query(Paper)
-        .join(Paper.printer_links)
-        .filter_by(printer_id=printer_id)
-        .all()
-    )
-    toners = db.query(Toner).filter(Toner.printer_id == printer_id).all()
-    for t in toners:
-        _ = t.replacement_logs  # trigger lazy load
-
-    # Pre-load existing (job_id, recorded_at) pairs to check duplicates without per-row DB queries
-    existing_keys: set[tuple] = set(
-        db.query(PrintJob.job_id, PrintJob.recorded_at)
-        .filter(PrintJob.printer_id == printer_id)
-        .all()
-    )
-    # Track keys added in this batch (in-session duplicates)
-    batch_keys: set[tuple] = set()
-
-    skipped: list[dict] = []
-    imported = 0
-
-    for idx, row in df.iterrows():
-        row_num = int(str(idx)) + 2  # 1-indexed + header
-
-        # Resolve job_id
-        job_id_raw = _col(row, mapping, "job_id") or _col(row, mapping, "jobid") or _col(row, mapping, "id")
-        if not job_id_raw or str(job_id_raw).strip() in ("", "nan"):
-            skipped.append({"row_number": row_num, "reason": "Missing job_id"})
-            continue
-
-        job_id = str(job_id_raw).strip()
-
-        # Recorded at — try multiple fallbacks
-        recorded_at = _parse_dt(
-            _col(row, mapping, "recorded_at")
-            or _col(row, mapping, "printed_at")
-            or _col(row, mapping, "date")
-        )
-
-        # Duplicate check: (job_id, recorded_at) must be unique per printer
-        dup_key = (job_id, recorded_at)
-        if dup_key in existing_keys or dup_key in batch_keys:
-            skipped.append({"row_number": row_num, "reason": f"Duplicate job_id={job_id} at {recorded_at}"})
-            continue
-
-        status_val = _str_or_none(_col(row, mapping, "status", "")) or ""
-        is_waste = status_val.lower() in ("failed", "cancelled", "canceled", "error")
-
-        color_pages = _parse_int(_col(row, mapping, "color_pages", 0))
-        bw_pages = _parse_int(_col(row, mapping, "bw_pages", 0))
-        printed_pages = _parse_int(_col(row, mapping, "printed_pages") or _col(row, mapping, "pages", 0))
-        if printed_pages == 0:
-            printed_pages = color_pages + bw_pages
-
-        # paper dimensions — may be mapped
-        pw = _col(row, mapping, "paper_width_mm")
-        pl = _col(row, mapping, "paper_length_mm")
-
-        job = PrintJob(
-            printer_id=printer_id,
-            upload_batch_id=batch.id,
-            job_id=job_id,
-            job_name=_str_or_none(_col(row, mapping, "job_name", "")),
-            status=_str_or_none(status_val),
-            owner_name=_str_or_none(_col(row, mapping, "owner_name", "")),
-            recorded_at=recorded_at,
-            arrived_at=_parse_dt(_col(row, mapping, "arrived_at")),
-            printed_at=_parse_dt(_col(row, mapping, "printed_at")),
-            color_mode=_str_or_none(_col(row, mapping, "color_mode", "")),
-            paper_type=_str_or_none(_col(row, mapping, "paper_type", "")),
-            paper_size=_str_or_none(_col(row, mapping, "paper_size", "")),
-            paper_width_mm=_parse_decimal(pw) if pw and str(pw).strip() not in ("", "0", "nan") else None,
-            paper_length_mm=_parse_decimal(pl) if pl and str(pl).strip() not in ("", "0", "nan") else None,
-            is_duplex=_parse_bool(_col(row, mapping, "is_duplex")),
-            copies=_parse_int(_col(row, mapping, "copies", 1)) or 1,
-            input_pages=_parse_int(_col(row, mapping, "input_pages", 0)),
-            printed_pages=printed_pages,
-            color_pages=color_pages,
-            bw_pages=bw_pages,
-            specialty_pages=_parse_int(_col(row, mapping, "specialty_pages", 0)),
-            gold_pages=_parse_int(_col(row, mapping, "gold_pages", 0)),
-            silver_pages=_parse_int(_col(row, mapping, "silver_pages", 0)),
-            clear_pages=_parse_int(_col(row, mapping, "clear_pages", 0)),
-            white_pages=_parse_int(_col(row, mapping, "white_pages", 0)),
-            texture_pages=_parse_int(_col(row, mapping, "texture_pages", 0)),
-            pink_pages=_parse_int(_col(row, mapping, "pink_pages", 0)),
-            blank_pages=_parse_int(_col(row, mapping, "blank_pages", 0)),
-            printed_sheets=_parse_int(_col(row, mapping, "printed_sheets", 0)),
-            waste_sheets=_parse_int(_col(row, mapping, "waste_sheets", 0)),
-            error_info=_str_or_none(_col(row, mapping, "error_info", "")),
-            is_waste=is_waste,
-            # Extended metadata
-            sub_id=_str_or_none(_col(row, mapping, "sub_id", "")),
-            jdf_job_id=_str_or_none(_col(row, mapping, "jdf_job_id", "")),
-            jdf_job_part_id=_str_or_none(_col(row, mapping, "jdf_job_part_id", "")),
-            logical_printer=_str_or_none(_col(row, mapping, "logical_printer", "")),
-            template=_str_or_none(_col(row, mapping, "template", "")),
-            imposition_settings=_str_or_none(_col(row, mapping, "imposition_settings", "")),
-            media_name=_str_or_none(_col(row, mapping, "media_name", "")),
-            paper_tray=_str_or_none(_col(row, mapping, "paper_tray", "")),
-            print_collation=_str_or_none(_col(row, mapping, "print_collation", "")),
-            imposed_pages=_parse_int(_col(row, mapping, "imposed_pages")) or None,
-            last_printed_page=_str_or_none(_col(row, mapping, "last_printed_page", "")),
-            banner_sheet=_str_or_none(_col(row, mapping, "banner_sheet", "")),
-            change_output_destination=_str_or_none(_col(row, mapping, "change_output_destination", "")),
-            account=_str_or_none(_col(row, mapping, "account", "")),
-            comments=_str_or_none(_col(row, mapping, "comments", "")),
-            folder=_str_or_none(_col(row, mapping, "folder", "")),
-            tag=_str_or_none(_col(row, mapping, "tag", "")),
-            # Timing
-            conversion_start_at=_parse_dt(_col(row, mapping, "conversion_start_at")),
-            conversion_elapsed=_str_or_none(_col(row, mapping, "conversion_elapsed", "")),
-            rip_start_at=_parse_dt(_col(row, mapping, "rip_start_at")),
-            rip_elapsed=_str_or_none(_col(row, mapping, "rip_elapsed", "")),
-            rasterization_start_at=_parse_dt(_col(row, mapping, "rasterization_start_at")),
-            rasterization_elapsed=_str_or_none(_col(row, mapping, "rasterization_elapsed", "")),
-            printing_start_at=_parse_dt(_col(row, mapping, "printing_start_at")),
-            printing_elapsed=_str_or_none(_col(row, mapping, "printing_elapsed", "")),
-            # Specialty toner pages
-            pa_pages=_parse_int(_col(row, mapping, "pa_pages", 0)),
-            gold_6_pages=_parse_int(_col(row, mapping, "gold_6_pages", 0)),
-            silver_6_pages=_parse_int(_col(row, mapping, "silver_6_pages", 0)),
-            white_6_pages=_parse_int(_col(row, mapping, "white_6_pages", 0)),
-            pink_6_pages=_parse_int(_col(row, mapping, "pink_6_pages", 0)),
-            # Raster coverage CMYK
-            coverage_k=_parse_decimal(_col(row, mapping, "coverage_k")) or None,
-            coverage_c=_parse_decimal(_col(row, mapping, "coverage_c")) or None,
-            coverage_m=_parse_decimal(_col(row, mapping, "coverage_m")) or None,
-            coverage_y=_parse_decimal(_col(row, mapping, "coverage_y")) or None,
-            # Raster coverage specialty #1
-            coverage_gld_1=_parse_decimal(_col(row, mapping, "coverage_gld_1")) or None,
-            coverage_slv_1=_parse_decimal(_col(row, mapping, "coverage_slv_1")) or None,
-            coverage_clr_1=_parse_decimal(_col(row, mapping, "coverage_clr_1")) or None,
-            coverage_wht_1=_parse_decimal(_col(row, mapping, "coverage_wht_1")) or None,
-            coverage_cr_1=_parse_decimal(_col(row, mapping, "coverage_cr_1")) or None,
-            coverage_p_1=_parse_decimal(_col(row, mapping, "coverage_p_1")) or None,
-            coverage_pa_1=_parse_decimal(_col(row, mapping, "coverage_pa_1")) or None,
-            # Raster coverage specialty #6
-            coverage_gld_6=_parse_decimal(_col(row, mapping, "coverage_gld_6")) or None,
-            coverage_slv_6=_parse_decimal(_col(row, mapping, "coverage_slv_6")) or None,
-            coverage_wht_6=_parse_decimal(_col(row, mapping, "coverage_wht_6")) or None,
-            coverage_p_6=_parse_decimal(_col(row, mapping, "coverage_p_6")) or None,
-            # Raster coverage estimation CMYK
-            coverage_est_k=_parse_decimal(_col(row, mapping, "coverage_est_k")) or None,
-            coverage_est_c=_parse_decimal(_col(row, mapping, "coverage_est_c")) or None,
-            coverage_est_m=_parse_decimal(_col(row, mapping, "coverage_est_m")) or None,
-            coverage_est_y=_parse_decimal(_col(row, mapping, "coverage_est_y")) or None,
-            # Raster coverage estimation specialty #1
-            coverage_est_gld_1=_parse_decimal(_col(row, mapping, "coverage_est_gld_1")) or None,
-            coverage_est_slv_1=_parse_decimal(_col(row, mapping, "coverage_est_slv_1")) or None,
-            coverage_est_clr_1=_parse_decimal(_col(row, mapping, "coverage_est_clr_1")) or None,
-            coverage_est_wht_1=_parse_decimal(_col(row, mapping, "coverage_est_wht_1")) or None,
-            coverage_est_cr_1=_parse_decimal(_col(row, mapping, "coverage_est_cr_1")) or None,
-            coverage_est_p_1=_parse_decimal(_col(row, mapping, "coverage_est_p_1")) or None,
-            coverage_est_pa_1=_parse_decimal(_col(row, mapping, "coverage_est_pa_1")) or None,
-            # Raster coverage estimation specialty #6
-            coverage_est_gld_6=_parse_decimal(_col(row, mapping, "coverage_est_gld_6")) or None,
-            coverage_est_slv_6=_parse_decimal(_col(row, mapping, "coverage_est_slv_6")) or None,
-            coverage_est_wht_6=_parse_decimal(_col(row, mapping, "coverage_est_wht_6")) or None,
-            coverage_est_p_6=_parse_decimal(_col(row, mapping, "coverage_est_p_6")) or None,
-            computed_paper_cost=Decimal("0"),
-            computed_toner_cost=Decimal("0"),
-            computed_total_cost=Decimal("0"),
-        )
-
-        # Compute costs before persisting
-        matched = match_paper_for_job(job, papers)
-        if matched is not None:
-            job.matched_paper_id = matched.id
-        cost_result = compute_job_cost(job, toners=toners, matched_paper=matched)
-        job.computed_paper_cost = Decimal(str(cost_result["paper_cost"]))
-        job.computed_toner_cost = Decimal(str(cost_result["toner_cost"]))
-        job.computed_total_cost = Decimal(str(cost_result["total_cost"]))
-        job.computed_toner_cost_breakdown = cost_result["breakdown"]
-        job.cost_computation_source = cost_result["source"]
-        job.cost_computed_at = datetime.now(timezone.utc)
-
+    def generate():
+        # Create the upload batch record
+        session = _SessionLocal()
         try:
-            db.add(job)
-            db.flush()  # flush per row so constraint errors are caught individually
-            batch_keys.add(dup_key)
-            imported += 1
-        except Exception as e:
-            db.rollback()
-            # Re-flush the batch record after rollback
-            db.add(batch)
-            db.flush()
-            skipped.append({"row_number": row_num, "reason": f"DB error: {str(e)[:80]}"})
+            batch = UploadBatch(
+                printer_id=printer_id, uploaded_by_user_id=user_id,
+                source=UploadSource.manual, filename=filename,
+                rows_total=total_rows, status=UploadStatus.processing,
+            )
+            session.add(batch)
+            session.flush()
+            batch_id = batch.id
+            existing_keys: set = set(
+                (r[0], r[1]) for r in
+                session.query(PrintJob.job_id, PrintJob.recorded_at)
+                .filter(PrintJob.printer_id == printer_id).all()
+            )
+            session.commit()
+        finally:
+            session.close()
 
-    batch.rows_imported = imported
-    batch.rows_skipped = len(skipped)
-    batch.skipped_details = skipped
-    batch.status = UploadStatus.completed
-    db.commit()
+        yield _evt({"done": 0, "total": total_rows})
 
-    return {
-        "data": {
-            "batch_id": batch.id,
-            "rows_total": batch.rows_total,
-            "rows_imported": imported,
-            "rows_skipped": len(skipped),
+        imported = 0
+        skipped: list[dict] = []
+        batch_keys: set = set()
+
+        # Process in batches of _UPLOAD_BATCH rows
+        df_records = [(idx, row) for idx, row in df.iterrows()]
+        for chunk_start in range(0, total_rows, _UPLOAD_BATCH):
+            chunk = df_records[chunk_start:chunk_start + _UPLOAD_BATCH]
+            jobs_to_add: list[PrintJob] = []
+            chunk_skipped: list[dict] = []
+
+            for idx, row in chunk:
+                row_num = int(str(idx)) + 2
+                job_id_raw = _col(row, mapping, "job_id") or _col(row, mapping, "jobid") or _col(row, mapping, "id")
+                if not job_id_raw or str(job_id_raw).strip() in ("", "nan"):
+                    chunk_skipped.append({"row_number": row_num, "reason": "Missing job_id"})
+                    continue
+                job_id = str(job_id_raw).strip()
+                recorded_at = _parse_dt(
+                    _col(row, mapping, "recorded_at")
+                    or _col(row, mapping, "printed_at")
+                    or _col(row, mapping, "date")
+                )
+                dup_key = (job_id, recorded_at)
+                if dup_key in existing_keys or dup_key in batch_keys:
+                    chunk_skipped.append({"row_number": row_num, "reason": f"Duplicate job_id={job_id}"})
+                    continue
+                jobs_to_add.append(_build_job(row, mapping, printer_id, batch_id))
+                batch_keys.add(dup_key)
+
+            # Insert this chunk in one commit
+            if jobs_to_add:
+                session = _SessionLocal()
+                try:
+                    session.add_all(jobs_to_add)
+                    session.commit()
+                    imported += len(jobs_to_add)
+                except Exception as e:
+                    session.rollback()
+                    chunk_skipped.append({"row_number": 0, "reason": f"DB error: {str(e)[:80]}"})
+                finally:
+                    session.close()
+
+            skipped.extend(chunk_skipped)
+            done_rows = min(chunk_start + _UPLOAD_BATCH, total_rows)
+            yield _evt({"done": done_rows, "total": total_rows})
+
+        # Finalise the batch record
+        session = _SessionLocal()
+        try:
+            b = session.query(UploadBatch).filter(UploadBatch.id == batch_id).first()
+            if b:
+                b.rows_imported = imported
+                b.rows_skipped = len(skipped)
+                b.skipped_details = skipped
+                b.status = UploadStatus.completed
+                session.commit()
+        finally:
+            session.close()
+
+        yield _evt({
+            "done": total_rows, "total": total_rows, "complete": True,
+            "batch_id": batch_id, "rows_total": total_rows,
+            "rows_imported": imported, "rows_skipped": len(skipped),
             "skipped_details": skipped[:20],
-        },
-        "message": f"Imported {imported} jobs, skipped {len(skipped)}",
-    }
+            "message": f"Imported {imported} jobs, skipped {len(skipped)}",
+        })
+
+    return _StreamingResponseUpload(generate(), media_type="text/event-stream")
 
 
 @router.get("")
@@ -451,13 +466,21 @@ async def clear_all_jobs(
     return {"data": {"jobs_deleted": jobs_deleted, "batches_deleted": batches_deleted}, "message": f"Cleared {jobs_deleted} jobs and {batches_deleted} upload batches"}
 
 
+import json as _json  # noqa: E402
+
+from fastapi.responses import StreamingResponse as _StreamingResponse  # noqa: E402
 from pydantic import BaseModel as _BaseModel  # noqa: E402
+
+from app.database import SessionLocal as _SessionLocal  # noqa: E402
 
 
 class RecomputeRequest(_BaseModel):
     from_date: datetime | None = None
     to_date: datetime | None = None
     batch_id: int | None = None
+
+
+_RECOMPUTE_BATCH = 500
 
 
 @router.post("/recompute-costs")
@@ -467,17 +490,11 @@ async def recompute_costs(
     db: Session = Depends(get_db),
     body: RecomputeRequest | None = None,
 ):
-    """Recompute paper + toner costs for all (or filtered) jobs on this printer."""
+    """Recompute costs in batches, streaming SSE progress events."""
     _get_printer_or_403(db, printer_id, current_user.id)
     body = body or RecomputeRequest()
 
-    papers = (
-        db.query(Paper).join(Paper.printer_links).filter_by(printer_id=printer_id).all()
-    )
-    toners = db.query(Toner).filter(Toner.printer_id == printer_id).all()
-    for t in toners:
-        _ = t.replacement_logs
-
+    # Count total jobs for progress reporting
     q = db.query(PrintJob).filter(PrintJob.printer_id == printer_id)
     if body.from_date:
         q = q.filter(PrintJob.recorded_at >= body.from_date)
@@ -485,22 +502,90 @@ async def recompute_costs(
         q = q.filter(PrintJob.recorded_at <= body.to_date)
     if body.batch_id:
         q = q.filter(PrintJob.upload_batch_id == body.batch_id)
+    total = q.count()
 
-    rows_updated = 0
-    for job in q.all():
-        matched = match_paper_for_job(job, papers)
-        job.matched_paper_id = matched.id if matched else None
-        cost_result = compute_job_cost(job, toners=toners, matched_paper=matched)
-        job.computed_paper_cost = Decimal(str(cost_result["paper_cost"]))
-        job.computed_toner_cost = Decimal(str(cost_result["toner_cost"]))
-        job.computed_total_cost = Decimal(str(cost_result["total_cost"]))
-        job.computed_toner_cost_breakdown = cost_result["breakdown"]
-        job.cost_computation_source = cost_result["source"]
-        job.cost_computed_at = datetime.now(timezone.utc)
-        rows_updated += 1
+    from_date = body.from_date
+    to_date = body.to_date
+    batch_id = body.batch_id
 
-    db.commit()
-    return {"data": {"rows_updated": rows_updated}, "message": "ok"}
+    def _event(payload: dict) -> str:
+        return f"data: {_json.dumps(payload)}\n\n"
+
+    def generate():
+        try:
+            yield _event({"done": 0, "total": total})
+
+            # Load papers and toners once — they don't change during recompute
+            setup_session = _SessionLocal()
+            try:
+                from sqlalchemy.orm import joinedload as _joinedload
+                papers = (
+                    setup_session.query(Paper)
+                    .join(Paper.printer_links)
+                    .filter_by(printer_id=printer_id)
+                    .all()
+                )
+                toners = (
+                    setup_session.query(Toner)
+                    .options(_joinedload(Toner.replacement_logs))
+                    .filter(Toner.printer_id == printer_id)
+                    .all()
+                )
+                # Detach so they can be used across sessions
+                setup_session.expunge_all()
+            finally:
+                setup_session.close()
+
+            done = 0
+            offset = 0
+            while True:
+                session = _SessionLocal()
+                try:
+                    bq = session.query(PrintJob).filter(PrintJob.printer_id == printer_id)
+                    if from_date:
+                        bq = bq.filter(PrintJob.recorded_at >= from_date)
+                    if to_date:
+                        bq = bq.filter(PrintJob.recorded_at <= to_date)
+                    if batch_id:
+                        bq = bq.filter(PrintJob.upload_batch_id == batch_id)
+                    jobs = bq.order_by(PrintJob.id).offset(offset).limit(_RECOMPUTE_BATCH).all()
+
+                    if not jobs:
+                        session.close()
+                        break
+
+                    for job in jobs:
+                        try:
+                            matched = match_paper_for_job(job, papers)
+                            job.matched_paper_id = matched.id if matched else None
+                            cost_result = compute_job_cost(job, toners=toners, matched_paper=matched)
+                            job.computed_paper_cost = Decimal(str(cost_result["paper_cost"]))
+                            job.computed_toner_cost = Decimal(str(cost_result["toner_cost"]))
+                            job.computed_total_cost = Decimal(str(cost_result["total_cost"]))
+                            job.computed_toner_cost_breakdown = cost_result["breakdown"]
+                            job.cost_computation_source = cost_result["source"]
+                            job.cost_computed_at = datetime.now(timezone.utc)
+                        except Exception as job_err:
+                            logger.warning("Cost compute failed for job %s: %s", job.id, job_err)
+
+                    session.commit()
+                    done += len(jobs)
+                    offset += _RECOMPUTE_BATCH
+                except Exception as batch_err:
+                    logger.error("Recompute batch error at offset %d: %s", offset, batch_err)
+                    session.rollback()
+                    offset += _RECOMPUTE_BATCH  # skip bad batch
+                finally:
+                    session.close()
+
+                yield _event({"done": done, "total": total})
+
+            yield _event({"done": total, "total": total, "complete": True})
+        except Exception as fatal:
+            logger.error("Recompute fatal error: %s", fatal)
+            yield _event({"error": str(fatal), "complete": True})
+
+    return _StreamingResponse(generate(), media_type="text/event-stream")
 
 
 # Separate router for jobs listing

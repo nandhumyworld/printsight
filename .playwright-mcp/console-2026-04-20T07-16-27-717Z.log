@@ -1,0 +1,36 @@
+[     531ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=7e87c6d3:21550
+[     583ms] [WARNING] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1d7d82cd:4435
+[     584ms] [WARNING] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1d7d82cd:4435
+[   25976ms] [ERROR] Failed to load resource: the server responded with a status of 401 () @ https://api.printsight.eyediaworks.in/api/v1/auth/login:0
+[   32003ms] [ERROR] Failed to load resource: the server responded with a status of 401 () @ https://api.printsight.eyediaworks.in/api/v1/auth/login:0
+[  117600ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:5173/@vite/client:559
+[  117605ms] [ERROR] Failed to load resource: net::ERR_EMPTY_RESPONSE @ http://localhost:5173/:0
+[  118622ms] [ERROR] Failed to load resource: net::ERR_EMPTY_RESPONSE @ http://localhost:5173/:0
+[  119642ms] [ERROR] Failed to load resource: net::ERR_EMPTY_RESPONSE @ http://localhost:5173/:0
+[  120648ms] [ERROR] Failed to load resource: net::ERR_EMPTY_RESPONSE @ http://localhost:5173/:0
+[  124344ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=507f777f:21550
+[  124410ms] [WARNING] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=507f777f:4435
+[  124410ms] [WARNING] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=507f777f:4435
+[  138907ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:5173/@vite/client:559
+[  138911ms] [ERROR] Failed to load resource: net::ERR_EMPTY_RESPONSE @ http://localhost:5173/:0
+[  139919ms] [ERROR] Failed to load resource: net::ERR_EMPTY_RESPONSE @ http://localhost:5173/:0
+[  143283ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/:0
+[  146648ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/:0
+[  150006ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/:0
+[  153370ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/:0
+[  156731ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/:0
+[  160072ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/:0
+[  163427ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/:0
+[  166782ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/:0
+[  170133ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/:0
+[  173487ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/:0
+[  176839ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/:0
+[  180192ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/:0
+[  181201ms] [ERROR] Failed to load resource: net::ERR_EMPTY_RESPONSE @ http://localhost:5173/:0
+[  182214ms] [ERROR] Failed to load resource: net::ERR_EMPTY_RESPONSE @ http://localhost:5173/:0
+[  183234ms] [ERROR] Failed to load resource: net::ERR_EMPTY_RESPONSE @ http://localhost:5173/:0
+[  184253ms] [ERROR] Failed to load resource: net::ERR_EMPTY_RESPONSE @ http://localhost:5173/:0
+[  185264ms] [ERROR] Failed to load resource: net::ERR_EMPTY_RESPONSE @ http://localhost:5173/:0
+[  188327ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=507f777f:21550
+[  188382ms] [WARNING] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=507f777f:4435
+[  188382ms] [WARNING] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=507f777f:4435

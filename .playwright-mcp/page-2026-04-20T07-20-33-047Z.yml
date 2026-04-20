@@ -1,0 +1,97 @@
+- generic [ref=e22]:
+  - complementary [ref=e23]:
+    - generic [ref=e24]:
+      - img [ref=e25]
+      - generic [ref=e29]: PrintSight
+    - navigation [ref=e30]:
+      - generic [ref=e31]:
+        - button "Overview" [ref=e32] [cursor=pointer]:
+          - generic [ref=e33]: Overview
+          - img [ref=e34]
+        - link "Dashboard" [ref=e36] [cursor=pointer]:
+          - /url: /dashboard
+          - img [ref=e37]
+          - text: Dashboard
+        - link "Analytics" [ref=e42] [cursor=pointer]:
+          - /url: /analytics
+          - img [ref=e43]
+          - text: Analytics
+      - generic [ref=e45]:
+        - button "Printers" [ref=e46] [cursor=pointer]:
+          - generic [ref=e47]: Printers
+          - img [ref=e48]
+        - link "All Printers" [ref=e50] [cursor=pointer]:
+          - /url: /printers
+          - img [ref=e51]
+          - text: All Printers
+      - generic [ref=e55]:
+        - button "Reports" [ref=e56] [cursor=pointer]:
+          - generic [ref=e57]: Reports
+          - img [ref=e58]
+        - link "Cost Reports" [ref=e60] [cursor=pointer]:
+          - /url: /reports
+          - img [ref=e61]
+          - text: Cost Reports
+        - link "Toner Yield" [ref=e64] [cursor=pointer]:
+          - /url: /reports/toner-yield
+          - img [ref=e65]
+          - text: Toner Yield
+      - generic [ref=e67]:
+        - button "Settings" [ref=e68] [cursor=pointer]:
+          - generic [ref=e69]: Settings
+          - img [ref=e70]
+        - link "Paper & Ink Costs" [ref=e72] [cursor=pointer]:
+          - /url: /settings/costs
+          - img [ref=e73]
+          - text: Paper & Ink Costs
+        - link "Toner Replacements" [ref=e76] [cursor=pointer]:
+          - /url: /settings/toner-replacements
+          - img [ref=e77]
+          - text: Toner Replacements
+        - link "Notifications" [ref=e80] [cursor=pointer]:
+          - /url: /settings/notifications
+          - img [ref=e81]
+          - text: Notifications
+        - link "Webhooks" [ref=e84] [cursor=pointer]:
+          - /url: /settings/webhooks
+          - img [ref=e85]
+          - text: Webhooks
+      - generic [ref=e88]:
+        - link "Admin Panel" [ref=e89] [cursor=pointer]:
+          - /url: /admin
+          - img [ref=e90]
+          - text: Admin Panel
+        - link "User Management" [ref=e92] [cursor=pointer]:
+          - /url: /admin/users
+  - generic [ref=e93]:
+    - banner [ref=e94]:
+      - generic [ref=e95]:
+        - generic [ref=e96]:
+          - img [ref=e97]
+          - generic [ref=e100]: admin
+          - generic [ref=e101]: owner
+        - button [ref=e102] [cursor=pointer]:
+          - img [ref=e103]
+    - main [ref=e106]:
+      - generic [ref=e107]:
+        - generic [ref=e108]:
+          - generic [ref=e109]:
+            - heading "Dashboard" [level=1] [ref=e110]
+            - paragraph [ref=e111]: Print cost overview and trends
+          - generic [ref=e112]:
+            - generic [ref=e113]:
+              - button "Today" [ref=e114] [cursor=pointer]
+              - button "7d" [ref=e115] [cursor=pointer]
+              - button "30d" [ref=e116] [cursor=pointer]
+              - button "90d" [ref=e117] [cursor=pointer]
+              - button "1y" [ref=e118] [cursor=pointer]
+            - button "2026-03-21 — 2026-04-20" [ref=e119] [cursor=pointer]
+        - heading "Cost over time — Paper + Toner colors (stacked)" [level=2] [ref=e126]
+        - generic [ref=e128]:
+          - heading "Paper cost by type" [level=2] [ref=e130]
+          - heading "Toner cost by color" [level=2] [ref=e133]
+        - generic [ref=e135]:
+          - heading "Top 10 most expensive jobs" [level=2] [ref=e136]
+          - generic [ref=e138]:
+            - img [ref=e139]
+            - paragraph [ref=e142]: No data in the selected range.

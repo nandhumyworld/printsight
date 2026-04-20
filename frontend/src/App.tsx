@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PrinterProvider } from '@/context/PrinterContext';
+import { ImportProvider } from '@/context/ImportContext';
 import LoginPage from '@/pages/auth/LoginPage';
 import RegisterPage from '@/pages/auth/RegisterPage';
 import DashboardPage from '@/pages/dashboard/DashboardPage';
@@ -27,6 +28,7 @@ const Placeholder = ({ title }: { title: string }) => (
 
 export default function App() {
   return (
+    <ImportProvider>
     <PrinterProvider>
     <Routes>
       <Route path="/login" element={<LoginPage />} />
@@ -53,5 +55,6 @@ export default function App() {
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
     </PrinterProvider>
+    </ImportProvider>
   );
 }

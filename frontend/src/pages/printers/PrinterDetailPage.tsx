@@ -1,29 +1,21 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/services/api';
+import { useImport } from '@/context/ImportContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { formatDateTime } from '@/lib/utils';
-import { ArrowLeft, Upload, CheckCircle, AlertCircle, FileText, Loader2, Eye, X, Trash2, Plus, Edit } from 'lucide-react';
+import { ArrowLeft, Upload, CheckCircle, AlertCircle, FileText, Loader2, Eye, X, Trash2, Plus, Edit, RefreshCw } from 'lucide-react';
 
-type UploadStep = 'idle' | 'previewing' | 'preview_ready' | 'importing' | 'done';
+type UploadStep = 'idle' | 'previewing' | 'preview_ready';
 
 interface PreviewData {
   detected_columns: string[];
   suggested_mapping: Record<string, string>;
   preview_rows: Record<string, string>[];
   total_rows: number;
-}
-
-interface ImportResult {
-  batch_id: number;
-  rows_total: number;
-  rows_imported: number;
-  rows_skipped: number;
-  skipped_details: { row_number: number; reason: string }[];
-  message: string;
 }
 
 // Maps column-mapping field keys → toner color name + type
@@ -362,10 +354,63 @@ export default function PrinterDetailPage() {
   const selectedFileRef = useRef<File | null>(null);
 
   const [confirmClear, setConfirmClear] = useState(false);
+  const [recomputeStatus, setRecomputeStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
+  const [recomputeProgress, setRecomputeProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 });
   const [step, setStep] = useState<UploadStep>('idle');
   const [preview, setPreview] = useState<PreviewData | null>(null);
-  const [importResult, setImportResult] = useState<ImportResult & { success: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const importCtx = useImport(id ?? '');
+
+  // Sync query cache when import completes
+  useEffect(() => {
+    if (importCtx.status === 'done') {
+      qc.invalidateQueries({ queryKey: ['uploads', id] });
+      qc.invalidateQueries({ queryKey: ['jobs', id] });
+      qc.invalidateQueries({ queryKey: ['analytics-summary'] });
+      qc.invalidateQueries({ queryKey: ['analytics-trends'] });
+    }
+  }, [importCtx.status, id, qc]);
+
+  const handleRecompute = async () => {
+    setRecomputeStatus('running');
+    setRecomputeProgress({ done: 0, total: 0 });
+    try {
+      const token = localStorage.getItem('access_token');
+      const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:8001';
+      const resp = await fetch(`${apiUrl}/api/v1/printers/${id}/uploads/recompute-costs`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      if (!resp.ok || !resp.body) throw new Error('Failed');
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop() ?? '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const evt = JSON.parse(line.slice(6));
+          setRecomputeProgress({ done: evt.done, total: evt.total });
+          if (evt.error) {
+            setRecomputeStatus('error');
+          } else if (evt.complete) {
+            qc.invalidateQueries({ queryKey: ['analytics-summary'] });
+            qc.invalidateQueries({ queryKey: ['analytics-trends'] });
+            qc.invalidateQueries({ queryKey: ['jobs', id] });
+            setRecomputeStatus('done');
+          }
+        }
+      }
+    } catch {
+      setRecomputeStatus('error');
+    }
+  };
 
   const clearJobs = useMutation({
     mutationFn: () => api.delete(`/printers/${id}/uploads/clear`),
@@ -405,7 +450,6 @@ export default function PrinterDetailPage() {
     if (!file) return;
     selectedFileRef.current = file;
     setError(null);
-    setImportResult(null);
     setStep('previewing');
 
     const form = new FormData();
@@ -423,24 +467,10 @@ export default function PrinterDetailPage() {
     if (fileRef.current) fileRef.current.value = '';
   };
 
-  const handleConfirmImport = async () => {
+  const handleConfirmImport = () => {
     if (!selectedFileRef.current) return;
-    setStep('importing');
-    const form = new FormData();
-    form.append('file', selectedFileRef.current);
-    try {
-      const { data } = await api.post(`/printers/${id}/uploads`, form, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      setImportResult({ success: true, ...data.data, message: data.message });
-      qc.invalidateQueries({ queryKey: ['uploads', id] });
-      qc.invalidateQueries({ queryKey: ['jobs', id] });
-      qc.invalidateQueries({ queryKey: ['analytics-summary'] });
-      qc.invalidateQueries({ queryKey: ['analytics-trends'] });
-    } catch (err: any) {
-      setImportResult({ success: false, message: err?.response?.data?.detail || 'Import failed' } as any);
-    }
-    setStep('done');
+    importCtx.startImport(selectedFileRef.current);
+    setStep('idle');
     setPreview(null);
     selectedFileRef.current = null;
   };
@@ -481,12 +511,39 @@ export default function PrinterDetailPage() {
       <div className="rounded-lg border bg-card p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold">Upload CSV Log</h2>
-          <button
-            onClick={() => navigate(`/printers/${id}/mapping`)}
-            className="text-xs text-primary hover:underline"
-          >
-            Configure column mapping →
-          </button>
+          <div className="flex items-center gap-3">
+            {recomputeStatus === 'running' ? (
+              <div className="flex items-center gap-2">
+                <div className="w-32 h-1.5 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className="h-full bg-primary rounded-full transition-all duration-300"
+                    style={{ width: recomputeProgress.total > 0 ? `${Math.round((recomputeProgress.done / recomputeProgress.total) * 100)}%` : '5%' }}
+                  />
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  {recomputeProgress.total > 0
+                    ? `${recomputeProgress.done.toLocaleString()} / ${recomputeProgress.total.toLocaleString()}`
+                    : 'Starting...'}
+                </span>
+              </div>
+            ) : (
+              <button
+                onClick={() => { setRecomputeStatus('idle'); handleRecompute(); }}
+                className="flex items-center gap-1.5 text-xs text-primary hover:underline"
+              >
+                <RefreshCw className="h-3 w-3" />
+                {recomputeStatus === 'done' ? 'Recompute Again' : recomputeStatus === 'error' ? 'Retry Recompute' : 'Recompute Costs'}
+              </button>
+            )}
+            {recomputeStatus === 'done' && <span className="text-xs text-green-600">✓ Done</span>}
+            {recomputeStatus === 'error' && <span className="text-xs text-destructive">Failed — try again</span>}
+            <button
+              onClick={() => navigate(`/printers/${id}/mapping`)}
+              className="text-xs text-primary hover:underline"
+            >
+              Configure column mapping →
+            </button>
+          </div>
         </div>
 
         {/* Upload gate: warn if no toners */}
@@ -497,7 +554,7 @@ export default function PrinterDetailPage() {
         )}
 
         {/* Step: idle or done */}
-        {(step === 'idle' || step === 'done') && (
+        {step === 'idle' && (
           <div
             className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-10 text-center cursor-pointer hover:border-primary hover:bg-muted/30 transition-colors"
             onClick={() => fileRef.current?.click()}
@@ -600,11 +657,54 @@ export default function PrinterDetailPage() {
           </div>
         )}
 
-        {/* Step: importing spinner */}
-        {step === 'importing' && (
-          <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-10">
-            <Loader2 className="h-8 w-8 animate-spin text-primary mb-2" />
-            <p className="text-sm text-muted-foreground">Importing rows...</p>
+        {/* Import progress (persists across navigation) */}
+        {(importCtx.status === 'running' || importCtx.status === 'done' || importCtx.status === 'error') && (
+          <div className={`rounded-lg border p-4 space-y-2 ${
+            importCtx.status === 'error' ? 'border-red-200 bg-red-50'
+            : importCtx.status === 'done' ? 'border-green-200 bg-green-50'
+            : 'border-blue-200 bg-blue-50'
+          }`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {importCtx.status === 'running' && <Loader2 className="h-4 w-4 animate-spin text-blue-600" />}
+                {importCtx.status === 'done' && <CheckCircle className="h-4 w-4 text-green-600" />}
+                {importCtx.status === 'error' && <AlertCircle className="h-4 w-4 text-red-600" />}
+                <span className={`text-sm font-medium ${
+                  importCtx.status === 'error' ? 'text-red-800'
+                  : importCtx.status === 'done' ? 'text-green-800'
+                  : 'text-blue-800'
+                }`}>
+                  {importCtx.status === 'running'
+                    ? `Importing ${importCtx.filename}…`
+                    : importCtx.status === 'done'
+                    ? importCtx.result?.message ?? 'Import complete'
+                    : 'Import failed'}
+                </span>
+              </div>
+              {importCtx.status !== 'running' && (
+                <button onClick={() => importCtx.clearState()} className="text-xs text-muted-foreground hover:text-foreground">✕</button>
+              )}
+            </div>
+            {importCtx.status === 'running' && (
+              <div className="space-y-1">
+                <div className="h-2 rounded-full bg-blue-200 overflow-hidden">
+                  <div
+                    className="h-full bg-blue-500 rounded-full transition-all duration-300"
+                    style={{ width: importCtx.progress.total > 0 ? `${Math.round((importCtx.progress.done / importCtx.progress.total) * 100)}%` : '3%' }}
+                  />
+                </div>
+                <p className="text-xs text-blue-700">
+                  {importCtx.progress.total > 0
+                    ? `${importCtx.progress.done.toLocaleString()} / ${importCtx.progress.total.toLocaleString()} rows`
+                    : 'Starting…'}
+                </p>
+              </div>
+            )}
+            {importCtx.status === 'done' && importCtx.result && (
+              <p className="text-xs text-green-700">
+                {importCtx.result.rows_imported.toLocaleString()} imported · {importCtx.result.rows_skipped} skipped of {importCtx.result.rows_total.toLocaleString()} total
+              </p>
+            )}
           </div>
         )}
 
@@ -618,33 +718,6 @@ export default function PrinterDetailPage() {
           </div>
         )}
 
-        {/* Import result */}
-        {importResult && step === 'done' && (
-          <div className={`rounded-lg p-4 ${importResult.success ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
-            <div className="flex items-start gap-2">
-              {importResult.success
-                ? <CheckCircle className="h-5 w-5 text-green-600 mt-0.5 shrink-0" />
-                : <AlertCircle className="h-5 w-5 text-red-600 mt-0.5 shrink-0" />}
-              <div className="flex-1">
-                <p className={`font-medium text-sm ${importResult.success ? 'text-green-800' : 'text-red-800'}`}>
-                  {importResult.message}
-                </p>
-                {importResult.success && (
-                  <p className="text-xs mt-1 text-green-700">
-                    {importResult.rows_imported} imported · {importResult.rows_skipped} skipped of {importResult.rows_total} total
-                  </p>
-                )}
-                {importResult.skipped_details?.length > 0 && (
-                  <div className="mt-2 max-h-28 overflow-y-auto space-y-0.5">
-                    {importResult.skipped_details.slice(0, 10).map((s, i) => (
-                      <p key={i} className="text-xs text-amber-700">Row {s.row_number}: {s.reason}</p>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Upload History */}
