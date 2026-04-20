@@ -251,6 +251,11 @@ export default function ColumnMappingPage() {
             <div className="px-4 py-2.5 bg-muted/50 border-b">
               <h3 className="font-semibold text-sm">{group.title}</h3>
             </div>
+            {group.title === 'Paper & Media' && (
+              <div className="px-4 py-2 bg-blue-50 border-b text-xs text-blue-700">
+                Width/Length take precedence over Size for cost matching. Type must exactly match a configured Paper name in Cost Config.
+              </div>
+            )}
             <div className="divide-y">
               {group.fields.map((field) => (
                 <div key={field.key} className="grid grid-cols-[1fr_140px_1fr] gap-3 items-center px-4 py-3">

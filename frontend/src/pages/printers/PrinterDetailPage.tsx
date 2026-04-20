@@ -52,9 +52,9 @@ function TonerManagement({ printerId, columnMapping }: {
 }) {
   const qc = useQueryClient();
   const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ toner_color: '', toner_type: 'standard', price_per_unit: '', rated_yield_pages: '', currency: 'INR' });
+  const [form, setForm] = useState({ toner_color: '', toner_type: 'standard', price_per_unit: '', rated_yield_pages: '', reference_coverage_pct: '5.00', currency: 'INR' });
   const [editToner, setEditToner] = useState<any | null>(null);
-  const [editForm, setEditForm] = useState({ price_per_unit: '', rated_yield_pages: '', currency: 'INR' });
+  const [editForm, setEditForm] = useState({ price_per_unit: '', rated_yield_pages: '', reference_coverage_pct: '5.00', currency: 'INR' });
 
   const { data: toners, isLoading } = useQuery({
     queryKey: ['toners', printerId],
@@ -82,11 +82,12 @@ function TonerManagement({ printerId, columnMapping }: {
       toner_type: form.toner_type,
       price_per_unit: parseFloat(form.price_per_unit),
       rated_yield_pages: parseInt(form.rated_yield_pages),
+      reference_coverage_pct: parseFloat(form.reference_coverage_pct),
       currency: form.currency,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['toners', printerId] });
-      setForm({ toner_color: '', toner_type: 'standard', price_per_unit: '', rated_yield_pages: '', currency: 'INR' });
+      setForm({ toner_color: '', toner_type: 'standard', price_per_unit: '', rated_yield_pages: '', reference_coverage_pct: '5.00', currency: 'INR' });
       setShowAdd(false);
     },
   });
@@ -102,11 +103,17 @@ function TonerManagement({ printerId, columnMapping }: {
       toner_type: editToner.toner_type,
       price_per_unit: parseFloat(editForm.price_per_unit),
       rated_yield_pages: parseInt(editForm.rated_yield_pages),
+      reference_coverage_pct: parseFloat(editForm.reference_coverage_pct),
       currency: editForm.currency,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['toners', printerId] });
       setEditToner(null);
+      if (confirm('Recompute costs for all jobs on this printer to reflect the updated toner settings?')) {
+        api.post(`/printers/${printerId}/uploads/recompute-costs`).then(() => {
+          qc.invalidateQueries({ queryKey: ['analytics-summary'] });
+        });
+      }
     },
   });
 
@@ -230,6 +237,12 @@ function TonerManagement({ printerId, columnMapping }: {
               <Label>Rated Yield (pages) *</Label>
               <Input type="number" min="1" placeholder="e.g. 3000" value={form.rated_yield_pages} onChange={e => setForm(p => ({ ...p, rated_yield_pages: e.target.value }))} />
             </div>
+            <div className="space-y-1">
+              <Label title="Coverage % the cartridge is rated at. 5% is CMYK standard; adjust for specialty toners.">
+                Reference Coverage % *
+              </Label>
+              <Input type="number" min="0.01" step="0.01" max="100" placeholder="5.00" value={form.reference_coverage_pct} onChange={e => setForm(p => ({ ...p, reference_coverage_pct: e.target.value }))} />
+            </div>
           </div>
           <div className="flex gap-2">
             <Button
@@ -278,7 +291,7 @@ function TonerManagement({ printerId, columnMapping }: {
                       <button
                         onClick={() => {
                           setEditToner(t);
-                          setEditForm({ price_per_unit: String(t.price_per_unit), rated_yield_pages: String(t.rated_yield_pages), currency: t.currency });
+                          setEditForm({ price_per_unit: String(t.price_per_unit), rated_yield_pages: String(t.rated_yield_pages), reference_coverage_pct: String(t.reference_coverage_pct ?? '5.00'), currency: t.currency });
                         }}
                         className="text-muted-foreground hover:text-primary p-1"
                       >
@@ -312,6 +325,12 @@ function TonerManagement({ printerId, columnMapping }: {
               <div className="space-y-1">
                 <Label>Rated Yield (pages)</Label>
                 <Input type="number" min="1" value={editForm.rated_yield_pages} onChange={e => setEditForm(p => ({ ...p, rated_yield_pages: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label title="Coverage % the cartridge is rated at. 5% is CMYK standard; adjust for specialty toners.">
+                  Reference Coverage %
+                </Label>
+                <Input type="number" min="0.01" step="0.01" max="100" value={editForm.reference_coverage_pct} onChange={e => setEditForm(p => ({ ...p, reference_coverage_pct: e.target.value }))} />
               </div>
               <div className="space-y-1">
                 <Label>Currency</Label>

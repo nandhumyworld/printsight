@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Plus, Trash2, Edit, X, Check } from 'lucide-react';
+import { usePrinter } from '@/context/PrinterContext';
+import { PaperSuggestSelect } from '@/components/printers/PaperSuggestSelect';
 import type { Paper } from '@/types';
 
 function PaperRow({ paper, onDelete }: { paper: Paper; onDelete: (id: number) => void }) {
@@ -63,6 +65,7 @@ function PaperRow({ paper, onDelete }: { paper: Paper; onDelete: (id: number) =>
 
 function AddPaperForm({ onDone }: { onDone: () => void }) {
   const qc = useQueryClient();
+  const { selectedPrinter } = usePrinter();
   const [form, setForm] = useState({
     name: '',
     display_name: '',
@@ -96,6 +99,19 @@ function AddPaperForm({ onDone }: { onDone: () => void }) {
   return (
     <div className="rounded-md border bg-muted/30 p-4 space-y-3">
       <h3 className="font-medium text-sm">Add Paper Type</h3>
+      {selectedPrinter && (
+        <PaperSuggestSelect
+          printerId={selectedPrinter.id}
+          onPick={s => setForm(p => ({
+            ...p,
+            name: s.paper_type,
+            width_mm: s.width_mm ? String(s.width_mm) : p.width_mm,
+            length_mm: s.length_mm ? String(s.length_mm) : p.length_mm,
+            gsm_min: s.gsm ? String(Math.max(1, s.gsm - 5)) : p.gsm_min,
+            gsm_max: s.gsm ? String(s.gsm + 5) : p.gsm_max,
+          }))}
+        />
+      )}
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
           <Label>CSV Name (exact match) *</Label>
