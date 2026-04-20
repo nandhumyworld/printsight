@@ -15,9 +15,11 @@ from sqlalchemy.orm import Session
 from app.auth.deps import CurrentUser
 from app.config import settings
 from app.database import get_db
+from app.models.paper import Paper
 from app.models.printer import Printer
 from app.models.toner import Toner, TonerReplacementLog
 from app.models.upload import PrintJob, UploadBatch, UploadSource, UploadStatus
+from app.services.cost_calc import compute_job_cost, match_paper_for_job
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/printers/{printer_id}/uploads", tags=["print-jobs"])
@@ -201,6 +203,17 @@ async def upload_csv(
     db.add(batch)
     db.flush()
 
+    # Cache printer papers and toners for cost computation (loaded once per upload)
+    papers = (
+        db.query(Paper)
+        .join(Paper.printer_links)
+        .filter_by(printer_id=printer_id)
+        .all()
+    )
+    toners = db.query(Toner).filter(Toner.printer_id == printer_id).all()
+    for t in toners:
+        _ = t.replacement_logs  # trigger lazy load
+
     # Pre-load existing (job_id, recorded_at) pairs to check duplicates without per-row DB queries
     existing_keys: set[tuple] = set(
         db.query(PrintJob.job_id, PrintJob.recorded_at)
@@ -357,6 +370,18 @@ async def upload_csv(
             computed_total_cost=Decimal("0"),
         )
 
+        # Compute costs before persisting
+        matched = match_paper_for_job(job, papers)
+        if matched is not None:
+            job.matched_paper_id = matched.id
+        cost_result = compute_job_cost(job, toners=toners, matched_paper=matched)
+        job.computed_paper_cost = Decimal(str(cost_result["paper_cost"]))
+        job.computed_toner_cost = Decimal(str(cost_result["toner_cost"]))
+        job.computed_total_cost = Decimal(str(cost_result["total_cost"]))
+        job.computed_toner_cost_breakdown = cost_result["breakdown"]
+        job.cost_computation_source = cost_result["source"]
+        job.cost_computed_at = datetime.now(timezone.utc)
+
         try:
             db.add(job)
             db.flush()  # flush per row so constraint errors are caught individually
@@ -424,6 +449,58 @@ async def clear_all_jobs(
     batches_deleted = db.query(UploadBatch).filter(UploadBatch.printer_id == printer_id).delete()
     db.commit()
     return {"data": {"jobs_deleted": jobs_deleted, "batches_deleted": batches_deleted}, "message": f"Cleared {jobs_deleted} jobs and {batches_deleted} upload batches"}
+
+
+from pydantic import BaseModel as _BaseModel  # noqa: E402
+
+
+class RecomputeRequest(_BaseModel):
+    from_date: datetime | None = None
+    to_date: datetime | None = None
+    batch_id: int | None = None
+
+
+@router.post("/recompute-costs")
+async def recompute_costs(
+    printer_id: int,
+    current_user: CurrentUser,
+    db: Session = Depends(get_db),
+    body: RecomputeRequest | None = None,
+):
+    """Recompute paper + toner costs for all (or filtered) jobs on this printer."""
+    _get_printer_or_403(db, printer_id, current_user.id)
+    body = body or RecomputeRequest()
+
+    papers = (
+        db.query(Paper).join(Paper.printer_links).filter_by(printer_id=printer_id).all()
+    )
+    toners = db.query(Toner).filter(Toner.printer_id == printer_id).all()
+    for t in toners:
+        _ = t.replacement_logs
+
+    q = db.query(PrintJob).filter(PrintJob.printer_id == printer_id)
+    if body.from_date:
+        q = q.filter(PrintJob.recorded_at >= body.from_date)
+    if body.to_date:
+        q = q.filter(PrintJob.recorded_at <= body.to_date)
+    if body.batch_id:
+        q = q.filter(PrintJob.upload_batch_id == body.batch_id)
+
+    rows_updated = 0
+    for job in q.all():
+        matched = match_paper_for_job(job, papers)
+        job.matched_paper_id = matched.id if matched else None
+        cost_result = compute_job_cost(job, toners=toners, matched_paper=matched)
+        job.computed_paper_cost = Decimal(str(cost_result["paper_cost"]))
+        job.computed_toner_cost = Decimal(str(cost_result["toner_cost"]))
+        job.computed_total_cost = Decimal(str(cost_result["total_cost"]))
+        job.computed_toner_cost_breakdown = cost_result["breakdown"]
+        job.cost_computation_source = cost_result["source"]
+        job.cost_computed_at = datetime.now(timezone.utc)
+        rows_updated += 1
+
+    db.commit()
+    return {"data": {"rows_updated": rows_updated}, "message": "ok"}
 
 
 # Separate router for jobs listing
