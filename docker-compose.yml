@@ -3,22 +3,29 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: printsight-api
     restart: unless-stopped
     env_file: .env
     ports:
       - "8001:8000"
     command: >
       sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    networks:
+      - coolify
+      - default
+
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
       args:
         VITE_API_URL: ${VITE_API_URL}
-    container_name: printsight-web
     restart: unless-stopped
     depends_on:
       - backend
-    ports:
-      - "3000:80"
+    networks:
+      - coolify
+      - default
+
+networks:
+  coolify:
+    external: true
