@@ -10,21 +10,15 @@ services:
       - "8001:8000"
     command: >
       sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
-    labels:
-      - "traefik.enable=false"
-
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: ${VITE_API_URL:-http://localhost:8001}
+        VITE_API_URL: ${VITE_API_URL}
     container_name: printsight-web
     restart: unless-stopped
     depends_on:
       - backend
     ports:
       - "3000:80"
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.services.printsight-web.loadbalancer.server.port=80"
