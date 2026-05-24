@@ -228,11 +228,11 @@ async def import_csv_headless(
                 "error_code": "INVALID_CSV",
                 "message": f"File exceeds {settings.max_csv_upload_size_mb} MB limit",
                 "details": [],
-                "source_filename": source_filename or file.filename,
+                "source_filename": source_filename or (file.filename or ""),
             },
         )
 
-    effective_name = source_filename or file.filename
+    effective_name = source_filename or (file.filename or "")
 
     try:
         result = import_csv_for_printer(
