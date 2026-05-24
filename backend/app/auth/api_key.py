@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hmac
+
 from fastapi import Header, HTTPException, status
 
 from app.config import get_settings
@@ -24,9 +26,10 @@ def require_ingest_api_key(x_api_key: str | None = Header(default=None)) -> None
                 "details": [],
             },
         )
-    if not x_api_key or x_api_key != configured:
+    if not x_api_key or not hmac.compare_digest(x_api_key, configured):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
+            headers={"WWW-Authenticate": 'ApiKey realm="ingest"'},
             detail={
                 "status": "error",
                 "error_code": "UNAUTHORIZED",

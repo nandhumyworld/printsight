@@ -10,6 +10,14 @@ from app.auth.api_key import require_ingest_api_key
 from app.config import get_settings
 
 
+@pytest.fixture(autouse=True)
+def _reset_settings_cache():
+    """Ensure each test sees fresh Settings (and doesn't leak the override)."""
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
 @pytest.fixture
 def mini_app():
     app = FastAPI()
@@ -46,6 +54,14 @@ def test_accepts_correct_header(mini_app, monkeypatch):
     assert r.status_code == 200
 
 
+def test_rejects_empty_header(mini_app, monkeypatch):
+    monkeypatch.setenv("INGEST_API_KEY", "configured")
+    get_settings.cache_clear()
+    c = TestClient(mini_app)
+    r = c.get("/protected", headers={"X-API-Key": ""})
+    assert r.status_code == 401
+
+
 def test_503_when_server_not_configured(mini_app, monkeypatch):
     monkeypatch.delenv("INGEST_API_KEY", raising=False)
     get_settings.cache_clear()
@@ -53,3 +69,13 @@ def test_503_when_server_not_configured(mini_app, monkeypatch):
     r = c.get("/protected", headers={"X-API-Key": "anything"})
     assert r.status_code == 503
     assert r.json()["detail"]["error_code"] == "INTERNAL"
+
+
+def test_401_includes_www_authenticate_header(mini_app, monkeypatch):
+    monkeypatch.setenv("INGEST_API_KEY", "configured")
+    get_settings.cache_clear()
+    c = TestClient(mini_app)
+    r = c.get("/protected", headers={"X-API-Key": "wrong"})
+    assert r.status_code == 401
+    assert "WWW-Authenticate" in r.headers
+    assert "ApiKey" in r.headers["WWW-Authenticate"]
