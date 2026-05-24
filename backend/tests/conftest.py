@@ -9,7 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.config import get_settings, settings
-from app.database import Base, get_db
+from app.database import Base
 from app.main import app
 from app.models.printer import Printer
 from app.models.user import User, UserRole

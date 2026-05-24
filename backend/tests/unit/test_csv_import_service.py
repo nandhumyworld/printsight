@@ -2,13 +2,8 @@
 
 from __future__ import annotations
 
-import io
-from datetime import datetime, timezone
-from decimal import Decimal
-
 import pytest
 
-# These imports will fail until the module exists — that is the point.
 from app.services.csv_import_service import (
     ImportError as CsvImportError,
     ImportResult,
