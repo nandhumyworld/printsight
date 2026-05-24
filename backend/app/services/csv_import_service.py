@@ -15,8 +15,6 @@ from decimal import Decimal
 from typing import Any, Callable, Optional
 
 import pandas as pd
-from sqlalchemy.orm import Session
-
 from app.database import SessionLocal
 from app.models.printer import Printer
 from app.models.upload import (
@@ -237,7 +235,6 @@ def _build_job(row, mapping, printer_id, batch_id) -> PrintJob:
 
 def import_csv_for_printer(
     *,
-    db: Session,
     printer_id: int,
     raw_bytes: bytes,
     filename: str,
@@ -247,18 +244,31 @@ def import_csv_for_printer(
 ) -> ImportResult:
     """Run the full CSV → DB import pipeline for one printer.
 
+    Owns all of its own DB sessions via SessionLocal so it can be safely
+    invoked from a background thread (the manual SSE upload runs the service
+    on a worker thread; the request session is not thread-safe).
+
     Raises ImportError on validation/precondition failures *before* any DB write.
     On success, persists an UploadBatch + PrintJob rows and returns ImportResult.
     """
-    # 1. Resolve printer / mapping
-    printer = db.query(Printer).filter(Printer.id == printer_id).first()
-    if not printer:
-        raise ImportError("PRINTER_NOT_FOUND", f"Printer {printer_id} not found")
-    if not printer.column_mapping:
-        raise ImportError(
-            "COLUMN_MAPPING_MISSING",
-            f"Printer {printer_id} has no column_mapping configured",
-        )
+    # 1. Resolve printer / mapping.
+    # Use our own short-lived session — this function may be called from a
+    # background thread (e.g. the SSE shim), and the caller's `db` session is
+    # not thread-safe. We snapshot the column_mapping into a plain dict so the
+    # rest of the pipeline does not need ORM-attached state.
+    _lookup = SessionLocal()
+    try:
+        printer = _lookup.query(Printer).filter(Printer.id == printer_id).first()
+        if not printer:
+            raise ImportError("PRINTER_NOT_FOUND", f"Printer {printer_id} not found")
+        if not printer.column_mapping:
+            raise ImportError(
+                "COLUMN_MAPPING_MISSING",
+                f"Printer {printer_id} has no column_mapping configured",
+            )
+        printer_column_mapping = dict(printer.column_mapping)
+    finally:
+        _lookup.close()
 
     # 2. Parse CSV (no DB writes yet)
     # Reject obvious binary garbage (null bytes) up front — pandas silently
@@ -272,7 +282,7 @@ def import_csv_for_printer(
         raise ImportError("INVALID_CSV", f"Could not parse CSV: {exc}") from exc
 
     df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
-    mapping = {k.lower(): v.strip().lower().replace(" ", "_") for k, v in (printer.column_mapping or {}).items()}
+    mapping = {k.lower(): v.strip().lower().replace(" ", "_") for k, v in printer_column_mapping.items()}
     total_rows = len(df)
 
     # 3. Resolve UploadSource enum
@@ -344,7 +354,14 @@ def import_csv_for_printer(
                 imported += len(jobs_to_add)
             except Exception as e:
                 chunk_session.rollback()
-                chunk_skipped.append({"row_number": 0, "reason": f"DB error: {str(e)[:80]}"})
+                logger.error(
+                    "csv_import chunk insert failed at offset %d for printer %d: %s",
+                    chunk_start, printer_id, e,
+                )
+                chunk_skipped.append({
+                    "row_number": 0,
+                    "reason": f"DB error in chunk starting row {chunk_start + 2}: {str(e)[:80]}",
+                })
             finally:
                 chunk_session.close()
 

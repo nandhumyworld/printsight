@@ -158,7 +158,6 @@ async def upload_csv(
     def _run():
         try:
             result = import_csv_for_printer(
-                db=db,
                 printer_id=printer_id,
                 raw_bytes=raw,
                 filename=filename,

@@ -18,9 +18,8 @@ SAMPLE_CSV = (
 )
 
 
-def test_returns_import_result_dataclass(db_session, printer_with_mapping):
+def test_returns_import_result_dataclass(printer_with_mapping):
     result = import_csv_for_printer(
-        db=db_session,
         printer_id=printer_with_mapping.id,
         raw_bytes=SAMPLE_CSV.encode("utf-8"),
         filename="test.csv",
@@ -34,9 +33,8 @@ def test_returns_import_result_dataclass(db_session, printer_with_mapping):
     assert result.batch_id > 0
 
 
-def test_duplicate_repost_imports_zero(db_session, printer_with_mapping):
+def test_duplicate_repost_imports_zero(printer_with_mapping):
     args = dict(
-        db=db_session,
         printer_id=printer_with_mapping.id,
         raw_bytes=SAMPLE_CSV.encode("utf-8"),
         filename="test.csv",
@@ -50,10 +48,9 @@ def test_duplicate_repost_imports_zero(db_session, printer_with_mapping):
     assert second.rows_skipped == 2
 
 
-def test_unparseable_csv_raises_import_error(db_session, printer_with_mapping):
+def test_unparseable_csv_raises_import_error(printer_with_mapping):
     with pytest.raises(CsvImportError) as exc_info:
         import_csv_for_printer(
-            db=db_session,
             printer_id=printer_with_mapping.id,
             raw_bytes=b"\x00\x01not a csv",
             filename="bad.bin",
@@ -64,10 +61,9 @@ def test_unparseable_csv_raises_import_error(db_session, printer_with_mapping):
     assert exc_info.value.message
 
 
-def test_unknown_printer_raises(db_session):
+def test_unknown_printer_raises():
     with pytest.raises(CsvImportError) as exc_info:
         import_csv_for_printer(
-            db=db_session,
             printer_id=999999,
             raw_bytes=SAMPLE_CSV.encode("utf-8"),
             filename="t.csv",
@@ -77,10 +73,9 @@ def test_unknown_printer_raises(db_session):
     assert exc_info.value.error_code == "PRINTER_NOT_FOUND"
 
 
-def test_progress_callback_invoked(db_session, printer_with_mapping):
+def test_progress_callback_invoked(printer_with_mapping):
     seen: list[tuple[int, int]] = []
     import_csv_for_printer(
-        db=db_session,
         printer_id=printer_with_mapping.id,
         raw_bytes=SAMPLE_CSV.encode("utf-8"),
         filename="t.csv",
