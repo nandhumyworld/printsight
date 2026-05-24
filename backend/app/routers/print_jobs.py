@@ -8,9 +8,11 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 import pandas as pd
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from app.auth.api_key import require_ingest_api_key
 from app.auth.deps import CurrentUser
 from app.config import settings
 from app.database import get_db
@@ -19,6 +21,10 @@ from app.models.printer import Printer
 from app.models.toner import Toner, TonerReplacementLog
 from app.models.upload import PrintJob, UploadBatch, UploadSource, UploadStatus
 from app.services.cost_calc import compute_job_cost, match_paper_for_job  # noqa: F401 (used in recompute)
+from app.services.csv_import_service import (
+    ImportError as CsvImportError,
+    import_csv_for_printer,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/printers/{printer_id}/uploads", tags=["print-jobs"])
@@ -193,6 +199,75 @@ async def upload_csv(
 
     return _StreamingResponseUpload(generate(), media_type="text/event-stream")
 
+
+@router.post("/import", dependencies=[Depends(require_ingest_api_key)])
+async def import_csv_headless(
+    printer_id: int,
+    file: UploadFile = File(...),
+    source_filename: str | None = Form(default=None),
+):
+    """Headless CSV import for n8n/external pushers. API-key-authenticated."""
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status": "error",
+                "error_code": "INVALID_CSV",
+                "message": "Only .csv files are accepted",
+                "details": [],
+                "source_filename": source_filename or (file.filename or ""),
+            },
+        )
+
+    raw = await file.read()
+    if len(raw) > MAX_BYTES:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status": "error",
+                "error_code": "INVALID_CSV",
+                "message": f"File exceeds {settings.max_csv_upload_size_mb} MB limit",
+                "details": [],
+                "source_filename": source_filename or file.filename,
+            },
+        )
+
+    effective_name = source_filename or file.filename
+
+    try:
+        result = import_csv_for_printer(
+            printer_id=printer_id,
+            raw_bytes=raw,
+            filename=effective_name,
+            source=UploadSource.automated.value,
+            uploaded_by_user_id=None,
+        )
+    except CsvImportError as e:
+        status_code = {
+            "INVALID_CSV": 400,
+            "COLUMN_MAPPING_MISSING": 400,
+            "PRINTER_NOT_FOUND": 404,
+        }.get(e.error_code, 500)
+        return JSONResponse(
+            status_code=status_code,
+            content={
+                "status": "error",
+                "error_code": e.error_code,
+                "message": e.message,
+                "details": e.details,
+                "source_filename": effective_name,
+            },
+        )
+
+    return {
+        "status": "success",
+        "batch_id": result.batch_id,
+        "printer_id": result.printer_id,
+        "rows_total": result.rows_total,
+        "rows_imported": result.rows_imported,
+        "rows_skipped": result.rows_skipped,
+        "source_filename": effective_name,
+    }
 
 
 @router.get("")
