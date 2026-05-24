@@ -16,7 +16,10 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Postgres enums can be extended but not shrunk transactionally.
+    # Postgres < 16 cannot run ALTER TYPE ... ADD VALUE inside a transaction
+    # block; Alembic's online runner opens one by default. COMMIT first to
+    # close it, then extend the enum. Safe on all supported Postgres versions.
+    op.execute("COMMIT")
     op.execute("ALTER TYPE upload_source ADD VALUE IF NOT EXISTS 'automated'")
 
 
