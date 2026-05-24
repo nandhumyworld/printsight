@@ -16,8 +16,12 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Postgres enums can be extended but not shrunk transactionally.
     op.execute("ALTER TYPE upload_source ADD VALUE IF NOT EXISTS 'automated'")
 
 
 def downgrade() -> None:
+    # No-op: Postgres doesn't support removing enum values without recreating
+    # the type. Downgrade leaves the value in place; existing rows referencing
+    # it would break a true removal.
     pass
