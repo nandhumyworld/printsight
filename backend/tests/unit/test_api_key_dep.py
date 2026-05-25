@@ -63,7 +63,9 @@ def test_rejects_empty_header(mini_app, monkeypatch):
 
 
 def test_503_when_server_not_configured(mini_app, monkeypatch):
-    monkeypatch.delenv("INGEST_API_KEY", raising=False)
+    # Use empty string (env vars take precedence over .env file values in
+    # pydantic-settings, so this masks any INGEST_API_KEY in the repo .env).
+    monkeypatch.setenv("INGEST_API_KEY", "")
     get_settings.cache_clear()
     c = TestClient(mini_app)
     r = c.get("/protected", headers={"X-API-Key": "anything"})

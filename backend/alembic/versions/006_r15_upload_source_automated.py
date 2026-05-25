@@ -17,10 +17,11 @@ depends_on = None
 
 def upgrade() -> None:
     # Postgres < 16 cannot run ALTER TYPE ... ADD VALUE inside a transaction
-    # block; Alembic's online runner opens one by default. COMMIT first to
-    # close it, then extend the enum. Safe on all supported Postgres versions.
-    op.execute("COMMIT")
-    op.execute("ALTER TYPE upload_source ADD VALUE IF NOT EXISTS 'automated'")
+    # block; Alembic's online runner opens one by default. autocommit_block
+    # scopes the COMMIT to just this statement so the surrounding migration
+    # transaction is not poisoned for any subsequent migrations in the run.
+    with op.get_context().autocommit_block():
+        op.execute("ALTER TYPE upload_source ADD VALUE IF NOT EXISTS 'automated'")
 
 
 def downgrade() -> None:

@@ -38,3 +38,8 @@ uploads/
 
 # Git worktrees
 .worktrees/
+
+# n8n local artifacts (service-account keys, secrets)
+n8n/Gdrivekey/
+n8n/**/*.json
+n8n/**/*serviceaccount*

@@ -15,7 +15,7 @@ def require_ingest_api_key(x_api_key: str | None = Header(default=None)) -> None
     - 503 if no key is configured server-side (refuse to silently allow).
     - 401 if the header is missing or does not match.
     """
-    configured = get_settings().ingest_api_key
+    configured = (get_settings().ingest_api_key or "").strip()
     if not configured:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
