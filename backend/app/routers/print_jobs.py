@@ -6,12 +6,13 @@ import io
 import logging
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Any
 
 import pandas as pd
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from app.auth.api_key import require_ingest_api_key
 from app.auth.deps import CurrentUser
 from app.config import settings
 from app.database import get_db
@@ -20,6 +21,10 @@ from app.models.printer import Printer
 from app.models.toner import Toner, TonerReplacementLog
 from app.models.upload import PrintJob, UploadBatch, UploadSource, UploadStatus
 from app.services.cost_calc import compute_job_cost, match_paper_for_job  # noqa: F401 (used in recompute)
+from app.services.csv_import_service import (
+    ImportError as CsvImportError,
+    import_csv_for_printer,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/printers/{printer_id}/uploads", tags=["print-jobs"])
@@ -33,57 +38,6 @@ def _get_printer_or_403(db: Session, printer_id: int, owner_id: int) -> Printer:
     if not p:
         raise HTTPException(status_code=404, detail="Printer not found")
     return p
-
-
-def _parse_int(val: Any, default: int = 0) -> int:
-    try:
-        return int(float(str(val))) if val is not None and str(val).strip() != "" else default
-    except (ValueError, TypeError):
-        return default
-
-
-def _parse_decimal(val: Any, default: Decimal = Decimal("0")) -> Decimal:
-    try:
-        return Decimal(str(val)) if val is not None and str(val).strip() != "" else default
-    except Exception:
-        return default
-
-
-_COVERAGE_MAX = Decimal("9999.9999")
-
-
-def _parse_coverage(val: Any) -> Decimal | None:
-    """Parse a coverage decimal and clamp to Numeric(8,4) range. Returns None if unparseable."""
-    if val is None or str(val).strip() in ("", "nan", "none"):
-        return None
-    try:
-        d = Decimal(str(val).strip())
-        if d < 0:
-            return None
-        if d > _COVERAGE_MAX:
-            return _COVERAGE_MAX
-        return d
-    except Exception:
-        return None
-
-
-def _parse_dt(val: Any) -> datetime | None:
-    if val is None or str(val).strip() in ("", "nan", "NaT"):
-        return None
-    try:
-        return pd.Timestamp(val).to_pydatetime().replace(tzinfo=timezone.utc)
-    except Exception:
-        return None
-
-
-def _col(row: pd.Series, mapping: dict, key: str, default: Any = None) -> Any:
-    """Get value using column mapping, falling back to the key itself."""
-    col_name = mapping.get(key, key)
-    if col_name in row.index:
-        return row[col_name]
-    if key in row.index:
-        return row[key]
-    return default
 
 
 # Known field aliases for fuzzy mapping suggestions
@@ -171,135 +125,8 @@ async def preview_csv(
     }
 
 
-def _parse_bool(val: Any) -> bool:
-    """Convert duplex-style strings to boolean. 'None'/''/0 → False, anything else → True."""
-    if val is None:
-        return False
-    s = str(val).strip().lower()
-    return s not in ("", "none", "no", "false", "0", "nan")
-
-
-def _str_or_none(val: Any) -> str | None:
-    s = str(val).strip() if val is not None else ""
-    return s if s and s.lower() not in ("nan", "none") else None
-
-
 import json as _json_upload  # noqa: E402
 from fastapi.responses import StreamingResponse as _StreamingResponseUpload  # noqa: E402
-
-_UPLOAD_BATCH = 500
-
-
-def _build_job(row, mapping, printer_id, batch_id) -> PrintJob:
-    """Build a PrintJob ORM object from a CSV row (no DB ops)."""
-    job_id_raw = _col(row, mapping, "job_id") or _col(row, mapping, "jobid") or _col(row, mapping, "id")
-    job_id = str(job_id_raw).strip()
-    recorded_at = _parse_dt(
-        _col(row, mapping, "recorded_at")
-        or _col(row, mapping, "printed_at")
-        or _col(row, mapping, "date")
-    )
-    status_val = _str_or_none(_col(row, mapping, "status", "")) or ""
-    color_pages = _parse_int(_col(row, mapping, "color_pages", 0))
-    bw_pages = _parse_int(_col(row, mapping, "bw_pages", 0))
-    printed_pages = _parse_int(_col(row, mapping, "printed_pages") or _col(row, mapping, "pages", 0))
-    if printed_pages == 0:
-        printed_pages = color_pages + bw_pages
-    pw = _col(row, mapping, "paper_width_mm")
-    pl = _col(row, mapping, "paper_length_mm")
-    return PrintJob(
-        printer_id=printer_id, upload_batch_id=batch_id, job_id=job_id,
-        job_name=_str_or_none(_col(row, mapping, "job_name", "")),
-        status=_str_or_none(status_val),
-        owner_name=_str_or_none(_col(row, mapping, "owner_name", "")),
-        recorded_at=recorded_at,
-        arrived_at=_parse_dt(_col(row, mapping, "arrived_at")),
-        printed_at=_parse_dt(_col(row, mapping, "printed_at")),
-        color_mode=_str_or_none(_col(row, mapping, "color_mode", "")),
-        paper_type=_str_or_none(_col(row, mapping, "paper_type", "")),
-        paper_size=_str_or_none(_col(row, mapping, "paper_size", "")),
-        paper_width_mm=_parse_decimal(pw) if pw and str(pw).strip() not in ("", "0", "nan") else None,
-        paper_length_mm=_parse_decimal(pl) if pl and str(pl).strip() not in ("", "0", "nan") else None,
-        is_duplex=_parse_bool(_col(row, mapping, "is_duplex")),
-        copies=_parse_int(_col(row, mapping, "copies", 1)) or 1,
-        input_pages=_parse_int(_col(row, mapping, "input_pages", 0)),
-        printed_pages=printed_pages, color_pages=color_pages, bw_pages=bw_pages,
-        specialty_pages=_parse_int(_col(row, mapping, "specialty_pages", 0)),
-        gold_pages=_parse_int(_col(row, mapping, "gold_pages", 0)),
-        silver_pages=_parse_int(_col(row, mapping, "silver_pages", 0)),
-        clear_pages=_parse_int(_col(row, mapping, "clear_pages", 0)),
-        white_pages=_parse_int(_col(row, mapping, "white_pages", 0)),
-        texture_pages=_parse_int(_col(row, mapping, "texture_pages", 0)),
-        pink_pages=_parse_int(_col(row, mapping, "pink_pages", 0)),
-        blank_pages=_parse_int(_col(row, mapping, "blank_pages", 0)),
-        printed_sheets=_parse_int(_col(row, mapping, "printed_sheets", 0)),
-        waste_sheets=_parse_int(_col(row, mapping, "waste_sheets", 0)),
-        error_info=_str_or_none(_col(row, mapping, "error_info", "")),
-        is_waste=status_val.lower() in ("failed", "cancelled", "canceled", "error"),
-        sub_id=_str_or_none(_col(row, mapping, "sub_id", "")),
-        jdf_job_id=_str_or_none(_col(row, mapping, "jdf_job_id", "")),
-        jdf_job_part_id=_str_or_none(_col(row, mapping, "jdf_job_part_id", "")),
-        logical_printer=_str_or_none(_col(row, mapping, "logical_printer", "")),
-        template=_str_or_none(_col(row, mapping, "template", "")),
-        imposition_settings=_str_or_none(_col(row, mapping, "imposition_settings", "")),
-        media_name=_str_or_none(_col(row, mapping, "media_name", "")),
-        paper_tray=_str_or_none(_col(row, mapping, "paper_tray", "")),
-        print_collation=_str_or_none(_col(row, mapping, "print_collation", "")),
-        imposed_pages=_parse_int(_col(row, mapping, "imposed_pages")) or None,
-        last_printed_page=_str_or_none(_col(row, mapping, "last_printed_page", "")),
-        banner_sheet=_str_or_none(_col(row, mapping, "banner_sheet", "")),
-        change_output_destination=_str_or_none(_col(row, mapping, "change_output_destination", "")),
-        account=_str_or_none(_col(row, mapping, "account", "")),
-        comments=_str_or_none(_col(row, mapping, "comments", "")),
-        folder=_str_or_none(_col(row, mapping, "folder", "")),
-        tag=_str_or_none(_col(row, mapping, "tag", "")),
-        conversion_start_at=_parse_dt(_col(row, mapping, "conversion_start_at")),
-        conversion_elapsed=_str_or_none(_col(row, mapping, "conversion_elapsed", "")),
-        rip_start_at=_parse_dt(_col(row, mapping, "rip_start_at")),
-        rip_elapsed=_str_or_none(_col(row, mapping, "rip_elapsed", "")),
-        rasterization_start_at=_parse_dt(_col(row, mapping, "rasterization_start_at")),
-        rasterization_elapsed=_str_or_none(_col(row, mapping, "rasterization_elapsed", "")),
-        printing_start_at=_parse_dt(_col(row, mapping, "printing_start_at")),
-        printing_elapsed=_str_or_none(_col(row, mapping, "printing_elapsed", "")),
-        pa_pages=_parse_int(_col(row, mapping, "pa_pages", 0)),
-        gold_6_pages=_parse_int(_col(row, mapping, "gold_6_pages", 0)),
-        silver_6_pages=_parse_int(_col(row, mapping, "silver_6_pages", 0)),
-        white_6_pages=_parse_int(_col(row, mapping, "white_6_pages", 0)),
-        pink_6_pages=_parse_int(_col(row, mapping, "pink_6_pages", 0)),
-        coverage_k=_parse_coverage(_col(row, mapping, "coverage_k")),
-        coverage_c=_parse_coverage(_col(row, mapping, "coverage_c")),
-        coverage_m=_parse_coverage(_col(row, mapping, "coverage_m")),
-        coverage_y=_parse_coverage(_col(row, mapping, "coverage_y")),
-        coverage_gld_1=_parse_coverage(_col(row, mapping, "coverage_gld_1")),
-        coverage_slv_1=_parse_coverage(_col(row, mapping, "coverage_slv_1")),
-        coverage_clr_1=_parse_coverage(_col(row, mapping, "coverage_clr_1")),
-        coverage_wht_1=_parse_coverage(_col(row, mapping, "coverage_wht_1")),
-        coverage_cr_1=_parse_coverage(_col(row, mapping, "coverage_cr_1")),
-        coverage_p_1=_parse_coverage(_col(row, mapping, "coverage_p_1")),
-        coverage_pa_1=_parse_coverage(_col(row, mapping, "coverage_pa_1")),
-        coverage_gld_6=_parse_coverage(_col(row, mapping, "coverage_gld_6")),
-        coverage_slv_6=_parse_coverage(_col(row, mapping, "coverage_slv_6")),
-        coverage_wht_6=_parse_coverage(_col(row, mapping, "coverage_wht_6")),
-        coverage_p_6=_parse_coverage(_col(row, mapping, "coverage_p_6")),
-        coverage_est_k=_parse_coverage(_col(row, mapping, "coverage_est_k")),
-        coverage_est_c=_parse_coverage(_col(row, mapping, "coverage_est_c")),
-        coverage_est_m=_parse_coverage(_col(row, mapping, "coverage_est_m")),
-        coverage_est_y=_parse_coverage(_col(row, mapping, "coverage_est_y")),
-        coverage_est_gld_1=_parse_coverage(_col(row, mapping, "coverage_est_gld_1")),
-        coverage_est_slv_1=_parse_coverage(_col(row, mapping, "coverage_est_slv_1")),
-        coverage_est_clr_1=_parse_coverage(_col(row, mapping, "coverage_est_clr_1")),
-        coverage_est_wht_1=_parse_coverage(_col(row, mapping, "coverage_est_wht_1")),
-        coverage_est_cr_1=_parse_coverage(_col(row, mapping, "coverage_est_cr_1")),
-        coverage_est_p_1=_parse_coverage(_col(row, mapping, "coverage_est_p_1")),
-        coverage_est_pa_1=_parse_coverage(_col(row, mapping, "coverage_est_pa_1")),
-        coverage_est_gld_6=_parse_coverage(_col(row, mapping, "coverage_est_gld_6")),
-        coverage_est_slv_6=_parse_coverage(_col(row, mapping, "coverage_est_slv_6")),
-        coverage_est_wht_6=_parse_coverage(_col(row, mapping, "coverage_est_wht_6")),
-        coverage_est_p_6=_parse_coverage(_col(row, mapping, "coverage_est_p_6")),
-        computed_paper_cost=Decimal("0"),
-        computed_toner_cost=Decimal("0"),
-        computed_total_cost=Decimal("0"),
-    )
 
 
 @router.post("")
@@ -309,122 +136,138 @@ async def upload_csv(
     db: Session = Depends(get_db),
     file: UploadFile = File(...),
 ):
-    """Upload CSV and stream SSE import progress events."""
-    p = _get_printer_or_403(db, printer_id, current_user.id)
+    """Upload CSV and stream SSE import progress events (manual UI upload)."""
+    from app.services.csv_import_service import (
+        ImportError as CsvImportError,
+        import_csv_for_printer,
+    )
+    import queue as _queue
+    import threading as _threading
+
+    _get_printer_or_403(db, printer_id, current_user.id)
 
     if not file.filename or not file.filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only .csv files are accepted")
 
     raw = await file.read()
     if len(raw) > MAX_BYTES:
-        raise HTTPException(status_code=400, detail=f"File exceeds {settings.max_csv_upload_size_mb} MB limit")
+        raise HTTPException(
+            status_code=400,
+            detail=f"File exceeds {settings.max_csv_upload_size_mb} MB limit",
+        )
 
-    try:
-        df = pd.read_csv(io.BytesIO(raw), dtype=str, keep_default_na=False)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Could not parse CSV: {exc}")
-
-    df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
-    mapping: dict = {k.lower(): v.strip().lower().replace(" ", "_") for k, v in (p.column_mapping or {}).items()}
-    filename = file.filename
     user_id = current_user.id
-    total_rows = len(df)
+    filename = file.filename
+    q: _queue.Queue = _queue.Queue()
+    _SENTINEL = object()
 
-    def _evt(payload: dict) -> str:
-        return f"data: {_json_upload.dumps(payload)}\n\n"
+    def _run():
+        try:
+            result = import_csv_for_printer(
+                printer_id=printer_id,
+                raw_bytes=raw,
+                filename=filename,
+                source=UploadSource.manual.value,
+                uploaded_by_user_id=user_id,
+                progress_callback=lambda done, total: q.put(("progress", done, total)),
+            )
+            q.put(("done", result))
+        except CsvImportError as e:
+            q.put(("error", e))
+        except Exception as e:  # noqa: BLE001 — surface unexpected errors to client
+            q.put(("error", CsvImportError("INTERNAL", str(e))))
+        finally:
+            q.put(_SENTINEL)
+
+    _threading.Thread(target=_run, daemon=True).start()
 
     def generate():
-        # Create the upload batch record
-        session = _SessionLocal()
-        try:
-            batch = UploadBatch(
-                printer_id=printer_id, uploaded_by_user_id=user_id,
-                source=UploadSource.manual, filename=filename,
-                rows_total=total_rows, status=UploadStatus.processing,
-            )
-            session.add(batch)
-            session.flush()
-            batch_id = batch.id
-            existing_keys: set = set(
-                (r[0], r[1]) for r in
-                session.query(PrintJob.job_id, PrintJob.recorded_at)
-                .filter(PrintJob.printer_id == printer_id).all()
-            )
-            session.commit()
-        finally:
-            session.close()
-
-        yield _evt({"done": 0, "total": total_rows})
-
-        imported = 0
-        skipped: list[dict] = []
-        batch_keys: set = set()
-
-        # Process in batches of _UPLOAD_BATCH rows
-        df_records = [(idx, row) for idx, row in df.iterrows()]
-        for chunk_start in range(0, total_rows, _UPLOAD_BATCH):
-            chunk = df_records[chunk_start:chunk_start + _UPLOAD_BATCH]
-            jobs_to_add: list[PrintJob] = []
-            chunk_skipped: list[dict] = []
-
-            for idx, row in chunk:
-                row_num = int(str(idx)) + 2
-                job_id_raw = _col(row, mapping, "job_id") or _col(row, mapping, "jobid") or _col(row, mapping, "id")
-                if not job_id_raw or str(job_id_raw).strip() in ("", "nan"):
-                    chunk_skipped.append({"row_number": row_num, "reason": "Missing job_id"})
-                    continue
-                job_id = str(job_id_raw).strip()
-                recorded_at = _parse_dt(
-                    _col(row, mapping, "recorded_at")
-                    or _col(row, mapping, "printed_at")
-                    or _col(row, mapping, "date")
-                )
-                dup_key = (job_id, recorded_at)
-                if dup_key in existing_keys or dup_key in batch_keys:
-                    chunk_skipped.append({"row_number": row_num, "reason": f"Duplicate job_id={job_id}"})
-                    continue
-                jobs_to_add.append(_build_job(row, mapping, printer_id, batch_id))
-                batch_keys.add(dup_key)
-
-            # Insert this chunk in one commit
-            if jobs_to_add:
-                session = _SessionLocal()
-                try:
-                    session.add_all(jobs_to_add)
-                    session.commit()
-                    imported += len(jobs_to_add)
-                except Exception as e:
-                    session.rollback()
-                    chunk_skipped.append({"row_number": 0, "reason": f"DB error: {str(e)[:80]}"})
-                finally:
-                    session.close()
-
-            skipped.extend(chunk_skipped)
-            done_rows = min(chunk_start + _UPLOAD_BATCH, total_rows)
-            yield _evt({"done": done_rows, "total": total_rows})
-
-        # Finalise the batch record
-        session = _SessionLocal()
-        try:
-            b = session.query(UploadBatch).filter(UploadBatch.id == batch_id).first()
-            if b:
-                b.rows_imported = imported
-                b.rows_skipped = len(skipped)
-                b.skipped_details = skipped
-                b.status = UploadStatus.completed
-                session.commit()
-        finally:
-            session.close()
-
-        yield _evt({
-            "done": total_rows, "total": total_rows, "complete": True,
-            "batch_id": batch_id, "rows_total": total_rows,
-            "rows_imported": imported, "rows_skipped": len(skipped),
-            "skipped_details": skipped[:20],
-            "message": f"Imported {imported} jobs, skipped {len(skipped)}",
-        })
+        while True:
+            item = q.get()
+            if item is _SENTINEL:
+                return
+            kind = item[0]
+            if kind == "progress":
+                _, done, total = item
+                yield f"data: {_json_upload.dumps({'done': done, 'total': total})}\n\n"
+            elif kind == "done":
+                r = item[1]
+                yield f"data: {_json_upload.dumps({'done': r.rows_total, 'total': r.rows_total, 'complete': True, 'batch_id': r.batch_id, 'rows_total': r.rows_total, 'rows_imported': r.rows_imported, 'rows_skipped': r.rows_skipped, 'skipped_details': r.skipped_details[:20], 'message': f'Imported {r.rows_imported} jobs, skipped {r.rows_skipped}'})}\n\n"
+            elif kind == "error":
+                e = item[1]
+                yield f"data: {_json_upload.dumps({'complete': True, 'error': e.error_code, 'message': e.message, 'details': e.details})}\n\n"
 
     return _StreamingResponseUpload(generate(), media_type="text/event-stream")
+
+
+@router.post("/import", dependencies=[Depends(require_ingest_api_key)])
+async def import_csv_headless(
+    printer_id: int,
+    file: UploadFile = File(...),
+    source_filename: str | None = Form(default=None),
+):
+    """Headless CSV import for n8n/external pushers. API-key-authenticated."""
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status": "error",
+                "error_code": "INVALID_CSV",
+                "message": "Only .csv files are accepted",
+                "details": [],
+                "source_filename": source_filename or (file.filename or ""),
+            },
+        )
+
+    raw = await file.read()
+    if len(raw) > MAX_BYTES:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status": "error",
+                "error_code": "INVALID_CSV",
+                "message": f"File exceeds {settings.max_csv_upload_size_mb} MB limit",
+                "details": [],
+                "source_filename": source_filename or (file.filename or ""),
+            },
+        )
+
+    effective_name = source_filename or (file.filename or "")
+
+    try:
+        result = import_csv_for_printer(
+            printer_id=printer_id,
+            raw_bytes=raw,
+            filename=effective_name,
+            source=UploadSource.automated.value,
+            uploaded_by_user_id=None,
+        )
+    except CsvImportError as e:
+        status_code = {
+            "INVALID_CSV": 400,
+            "COLUMN_MAPPING_MISSING": 400,
+            "PRINTER_NOT_FOUND": 404,
+        }.get(e.error_code, 500)
+        return JSONResponse(
+            status_code=status_code,
+            content={
+                "status": "error",
+                "error_code": e.error_code,
+                "message": e.message,
+                "details": e.details,
+                "source_filename": effective_name,
+            },
+        )
+
+    return {
+        "status": "success",
+        "batch_id": result.batch_id,
+        "printer_id": result.printer_id,
+        "rows_total": result.rows_total,
+        "rows_imported": result.rows_imported,
+        "rows_skipped": result.rows_skipped,
+        "source_filename": effective_name,
+    }
 
 
 @router.get("")

@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     # Upload
     max_csv_upload_size_mb: int = 10
 
+    # Ingest (headless API for n8n / external pushers)
+    ingest_api_key: str | None = None
+
     @property
     def cors_origins(self) -> list[str]:
         """Return the configured CORS origins as a list."""

@@ -28,6 +28,7 @@ from app.database import Base
 class UploadSource(str, enum.Enum):
     manual = "manual"
     api_push = "api_push"
+    automated = "automated"
 
 
 class UploadStatus(str, enum.Enum):
