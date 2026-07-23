@@ -197,7 +197,11 @@ def compute_job_cost(job, *, toners, matched_paper) -> dict:
             continue
 
         price_per_page = price / Decimal(yield_pages)
-        cost = (coverage / ref_cov) * price_per_page * Decimal(pages)
+        # Raster coverage is already the cumulative total across all pages of the
+        # job (e.g. a 2-page job at ~5.85%/page reports 11.7%), so it must NOT be
+        # multiplied by page count again — that double-counts. `pages` is retained
+        # only as a guard above (a color with 0 relevant pages contributes 0).
+        cost = (coverage / ref_cov) * price_per_page
         toner_total += cost
         breakdown[color_key.lower()] = float(round(cost, 4))
 
