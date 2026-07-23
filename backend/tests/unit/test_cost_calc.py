@@ -131,3 +131,33 @@ def test_unmatched_paper_yields_zero_paper_cost():
     j = _job()
     result = compute_job_cost(j, toners=[_toner("K")], matched_paper=None)
     assert result["paper_cost"] == 0
+
+
+def _toner_ch(color, channel, **kw):
+    t = _toner(color, **kw)
+    t.coverage_channel = channel
+    return t
+
+
+def test_coverage_channel_drives_cost_when_name_mismatches():
+    # Real-world bug: UI stores friendly name "Black", not code "K".
+    j = _job()
+    toners = [_toner_ch("Black", "K")]
+    result = compute_job_cost(j, toners=toners, matched_paper=_paper())
+    assert result["breakdown"]["k"] > 0
+
+
+def test_coverage_channel_takes_precedence_over_name():
+    j = _job()
+    # name says Yellow but channel says K -> should compute the K column
+    toners = [_toner_ch("Yellow", "K")]
+    result = compute_job_cost(j, toners=toners, matched_paper=_paper())
+    assert result["breakdown"]["k"] > 0
+
+
+def test_falls_back_to_name_when_channel_absent():
+    # Legacy row with no channel but a valid code name still computes.
+    j = _job()
+    toners = [_toner("K")]  # no coverage_channel attribute set
+    result = compute_job_cost(j, toners=toners, matched_paper=_paper())
+    assert result["breakdown"]["k"] > 0

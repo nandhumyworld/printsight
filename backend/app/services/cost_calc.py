@@ -179,7 +179,7 @@ def compute_job_cost(job, *, toners, matched_paper) -> dict:
     recorded_at = getattr(job, "recorded_at", None)
 
     for t in toners:
-        color_key = _normalize_color(t.toner_color)
+        color_key = getattr(t, "coverage_channel", None) or _normalize_color(t.toner_color)
         if color_key not in _COLOR_MAP:
             continue
         cov_attr, est_attr, pages_attr = _COLOR_MAP[color_key]
