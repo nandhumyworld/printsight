@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import io
 import logging
-from datetime import datetime, timezone
-from decimal import Decimal
+from datetime import datetime
 
 import pandas as pd
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
@@ -20,7 +19,7 @@ from app.models.paper import Paper
 from app.models.printer import Printer
 from app.models.toner import Toner, TonerReplacementLog
 from app.models.upload import PrintJob, UploadBatch, UploadSource, UploadStatus
-from app.services.cost_calc import compute_job_cost, match_paper_for_job  # noqa: F401 (used in recompute)
+from app.services.cost_calc import apply_cost_to_job, compute_job_cost, match_paper_for_job  # noqa: F401 (used in recompute)
 from app.services.csv_import_service import (
     ImportError as CsvImportError,
     import_csv_for_printer,
@@ -402,12 +401,7 @@ async def recompute_costs(
                             matched = match_paper_for_job(job, papers)
                             job.matched_paper_id = matched.id if matched else None
                             cost_result = compute_job_cost(job, toners=toners, matched_paper=matched)
-                            job.computed_paper_cost = Decimal(str(cost_result["paper_cost"]))
-                            job.computed_toner_cost = Decimal(str(cost_result["toner_cost"]))
-                            job.computed_total_cost = Decimal(str(cost_result["total_cost"]))
-                            job.computed_toner_cost_breakdown = cost_result["breakdown"]
-                            job.cost_computation_source = cost_result["source"]
-                            job.cost_computed_at = datetime.now(timezone.utc)
+                            apply_cost_to_job(job, cost_result)
                         except Exception as job_err:
                             logger.warning("Cost compute failed for job %s: %s", job.id, job_err)
 

@@ -121,8 +121,7 @@ async def create_replacement(
     # Auto-recompute costs for jobs printed after this replacement
     from app.models.paper import Paper
     from app.models.upload import PrintJob
-    from app.services.cost_calc import compute_job_cost, match_paper_for_job
-    from datetime import timezone
+    from app.services.cost_calc import apply_cost_to_job, compute_job_cost, match_paper_for_job
 
     papers = db.query(Paper).join(Paper.printer_links).filter_by(printer_id=body.printer_id).all()
     all_toners = db.query(Toner).filter(Toner.printer_id == body.printer_id).all()
@@ -136,12 +135,7 @@ async def create_replacement(
         matched = match_paper_for_job(job, papers)
         job.matched_paper_id = matched.id if matched else None
         cr = compute_job_cost(job, toners=all_toners, matched_paper=matched)
-        job.computed_paper_cost = Decimal(str(cr["paper_cost"]))
-        job.computed_toner_cost = Decimal(str(cr["toner_cost"]))
-        job.computed_total_cost = Decimal(str(cr["total_cost"]))
-        job.computed_toner_cost_breakdown = cr["breakdown"]
-        job.cost_computation_source = cr["source"]
-        job.cost_computed_at = datetime.now(timezone.utc)
+        apply_cost_to_job(job, cr)
     db.commit()
 
     return {"data": _log_out(log), "message": "Replacement logged", "recompute_hint": True}
