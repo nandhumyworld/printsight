@@ -21,6 +21,7 @@ from app.services.printer_service import (
     purge_printer,
     restore_printer,
 )
+from app.services.toner_channels import validate_coverage_channel
 
 router = APIRouter(prefix="/printers", tags=["printers"])
 
@@ -49,6 +50,7 @@ class PrinterUpdate(BaseModel):
 
 class TonerCreate(BaseModel):
     toner_color: str
+    coverage_channel: str
     toner_type: str = "standard"
     price_per_unit: float
     rated_yield_pages: int
@@ -278,10 +280,14 @@ async def list_toners(printer_id: int, current_user: CurrentUser, db: Session = 
 
 @router.post("/{printer_id}/toners", status_code=201)
 async def create_toner(printer_id: int, body: TonerCreate, current_user: OwnerUser, db: Session = Depends(get_db)):
-    _get_printer_or_404(db, printer_id, current_user.id)
+    p = _get_printer_or_404(db, printer_id, current_user.id)
+    err = validate_coverage_channel(body.coverage_channel, p.column_mapping)
+    if err:
+        raise HTTPException(status_code=422, detail=err)
     t = Toner(
         printer_id=printer_id,
         toner_color=body.toner_color,
+        coverage_channel=body.coverage_channel,
         toner_type=TonerType(body.toner_type),
         price_per_unit=body.price_per_unit,
         rated_yield_pages=body.rated_yield_pages,
@@ -296,11 +302,15 @@ async def create_toner(printer_id: int, body: TonerCreate, current_user: OwnerUs
 
 @router.put("/{printer_id}/toners/{toner_id}")
 async def update_toner(printer_id: int, toner_id: int, body: TonerCreate, current_user: OwnerUser, db: Session = Depends(get_db)):
-    _get_printer_or_404(db, printer_id, current_user.id)
+    p = _get_printer_or_404(db, printer_id, current_user.id)
     t = db.query(Toner).filter(Toner.id == toner_id, Toner.printer_id == printer_id).first()
     if not t:
         raise HTTPException(status_code=404, detail="Toner not found")
+    err = validate_coverage_channel(body.coverage_channel, p.column_mapping)
+    if err:
+        raise HTTPException(status_code=422, detail=err)
     t.toner_color = body.toner_color
+    t.coverage_channel = body.coverage_channel
     t.toner_type = TonerType(body.toner_type)
     t.price_per_unit = Decimal(str(body.price_per_unit))
     t.rated_yield_pages = body.rated_yield_pages
@@ -369,6 +379,7 @@ def _toner_out(t: Toner) -> dict[str, Any]:
         "id": t.id,
         "printer_id": t.printer_id,
         "toner_color": t.toner_color,
+        "coverage_channel": t.coverage_channel,
         "toner_type": t.toner_type.value,
         "price_per_unit": float(t.price_per_unit),
         "rated_yield_pages": t.rated_yield_pages,

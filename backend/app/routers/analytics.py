@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from app.auth.deps import OwnerUser
@@ -91,27 +92,36 @@ async def summary(
     if not printer_ids:
         return {"data": _empty_summary(period), "message": "ok"}
 
-    q = db.query(PrintJob).filter(
-        PrintJob.printer_id.in_(printer_ids),
-        PrintJob.recorded_at >= start,
-        PrintJob.recorded_at <= end,
+    row = (
+        db.query(
+            func.coalesce(func.sum(PrintJob.computed_total_cost), 0),
+            func.coalesce(func.sum(PrintJob.computed_paper_cost), 0),
+            func.coalesce(func.sum(PrintJob.computed_toner_cost), 0),
+            func.coalesce(func.sum(PrintJob.printed_pages), 0),
+            func.count(PrintJob.id),
+            func.coalesce(func.sum(case((PrintJob.is_waste, PrintJob.computed_total_cost), else_=0)), 0),
+            func.coalesce(func.sum(case((PrintJob.is_waste, PrintJob.printed_pages), else_=0)), 0),
+            func.coalesce(func.sum(PrintJob.color_pages), 0),
+            func.coalesce(func.sum(PrintJob.bw_pages), 0),
+        )
+        .filter(
+            PrintJob.printer_id.in_(printer_ids),
+            PrintJob.recorded_at >= start,
+            PrintJob.recorded_at <= end,
+        )
     )
     if printer_id:
-        q = q.filter(PrintJob.printer_id == printer_id)
+        row = row.filter(PrintJob.printer_id == printer_id)
+    (total_cost, paper_cost, toner_cost, total_pages, total_jobs,
+     waste_cost, waste_pages, color_pages, bw_pages) = row.one()
 
-    jobs = q.all()
-    if not jobs:
+    total_cost = float(total_cost); paper_cost = float(paper_cost)
+    toner_cost = float(toner_cost); total_pages = int(total_pages)
+    waste_cost = float(waste_cost); waste_pages = int(waste_pages)
+    color_pages = int(color_pages); bw_pages = int(bw_pages)
+
+    if total_jobs == 0:
         return {"data": _empty_summary(period), "message": "ok"}
-
-    total_cost = sum(float(j.computed_total_cost) for j in jobs)
-    paper_cost = sum(float(j.computed_paper_cost) for j in jobs)
-    toner_cost = sum(float(j.computed_toner_cost) for j in jobs)
-    total_pages = sum(j.printed_pages for j in jobs)
-    waste_jobs = [j for j in jobs if j.is_waste]
-    waste_cost = sum(float(j.computed_total_cost) for j in waste_jobs)
-    waste_pages = sum(j.printed_pages for j in waste_jobs)
-    color_pages = sum(j.color_pages for j in jobs)
-    bw_pages = sum(j.bw_pages for j in jobs)
 
     return {
         "data": {
@@ -120,7 +130,7 @@ async def summary(
             "paper_cost": round(paper_cost, 2),
             "toner_cost": round(toner_cost, 2),
             "total_pages": total_pages,
-            "total_jobs": len(jobs),
+            "total_jobs": total_jobs,
             "waste_cost": round(waste_cost, 2),
             "waste_pages": waste_pages,
             "waste_pct": round(waste_pages / total_pages * 100, 1) if total_pages else 0,
@@ -151,28 +161,33 @@ async def trends(
     if not printer_ids:
         return {"data": [], "message": "ok"}
 
-    q = db.query(PrintJob).filter(
-        PrintJob.printer_id.in_(printer_ids),
-        PrintJob.recorded_at >= start,
-        PrintJob.recorded_at <= end,
+    rows = (
+        db.query(
+            PrintJob.recorded_at, PrintJob.computed_total_cost,
+            PrintJob.computed_paper_cost, PrintJob.computed_toner_cost,
+            PrintJob.printed_pages, PrintJob.is_waste,
+        )
+        .filter(
+            PrintJob.printer_id.in_(printer_ids),
+            PrintJob.recorded_at >= start, PrintJob.recorded_at <= end,
+        )
     )
     if printer_id:
-        q = q.filter(PrintJob.printer_id == printer_id)
+        rows = rows.filter(PrintJob.printer_id == printer_id)
 
-    jobs = q.all()
     by_bucket: dict[str, dict] = {}
-    for j in jobs:
-        if not j.recorded_at:
+    for recorded_at, total, paper, toner, pages, is_waste in rows.all():
+        if not recorded_at:
             continue
-        bucket = _bucket_key(j.recorded_at, granularity)
+        bucket = _bucket_key(recorded_at, granularity)
         if bucket not in by_bucket:
             by_bucket[bucket] = {"date": bucket, "total_cost": 0.0, "paper_cost": 0.0, "toner_cost": 0.0, "pages": 0, "waste_cost": 0.0, "jobs": 0}
-        by_bucket[bucket]["total_cost"] += float(j.computed_total_cost)
-        by_bucket[bucket]["paper_cost"] += float(j.computed_paper_cost)
-        by_bucket[bucket]["toner_cost"] += float(j.computed_toner_cost)
-        by_bucket[bucket]["pages"] += j.printed_pages
-        if j.is_waste:
-            by_bucket[bucket]["waste_cost"] += float(j.computed_total_cost)
+        by_bucket[bucket]["total_cost"] += float(total)
+        by_bucket[bucket]["paper_cost"] += float(paper)
+        by_bucket[bucket]["toner_cost"] += float(toner)
+        by_bucket[bucket]["pages"] += pages
+        if is_waste:
+            by_bucket[bucket]["waste_cost"] += float(total)
         by_bucket[bucket]["jobs"] += 1
 
     trend_data = sorted(by_bucket.values(), key=lambda x: x["date"])
@@ -194,22 +209,29 @@ async def printers_comparison(
     end_date: Optional[datetime] = Query(None),
 ):
     start, end = _resolve_range(period, start_date, end_date)
-    printers = db.query(Printer).all()
+    rows = (
+        db.query(
+            Printer.id, Printer.name,
+            func.coalesce(func.sum(PrintJob.computed_total_cost), 0),
+            func.coalesce(func.sum(PrintJob.printed_pages), 0),
+            func.count(PrintJob.id),
+        )
+        .outerjoin(
+            PrintJob,
+            (PrintJob.printer_id == Printer.id)
+            & (PrintJob.recorded_at >= start)
+            & (PrintJob.recorded_at <= end),
+        )
+        .group_by(Printer.id, Printer.name)
+        .all()
+    )
     result = []
-    for p in printers:
-        jobs = db.query(PrintJob).filter(
-            PrintJob.printer_id == p.id,
-            PrintJob.recorded_at >= start,
-            PrintJob.recorded_at <= end,
-        ).all()
-        total_cost = sum(float(j.computed_total_cost) for j in jobs)
-        total_pages = sum(j.printed_pages for j in jobs)
+    for pid, name, total_cost, total_pages, total_jobs in rows:
+        total_cost = float(total_cost); total_pages = int(total_pages)
         result.append({
-            "printer_id": p.id,
-            "printer_name": p.name,
-            "total_cost": round(total_cost, 2),
-            "total_pages": total_pages,
-            "total_jobs": len(jobs),
+            "printer_id": pid, "printer_name": name,
+            "total_cost": round(total_cost, 2), "total_pages": total_pages,
+            "total_jobs": int(total_jobs),
             "cost_per_page": round(total_cost / total_pages, 4) if total_pages else 0,
         })
     return {"data": result, "message": "ok"}
@@ -229,18 +251,22 @@ async def cost_breakdown(
     if not printer_ids:
         return {"data": {}, "message": "ok"}
 
-    q = db.query(PrintJob).filter(
-        PrintJob.printer_id.in_(printer_ids),
-        PrintJob.recorded_at >= start,
-        PrintJob.recorded_at <= end,
+    row = (
+        db.query(
+            func.coalesce(func.sum(PrintJob.computed_paper_cost), 0),
+            func.coalesce(func.sum(PrintJob.computed_toner_cost), 0),
+            func.coalesce(func.sum(case((PrintJob.is_waste, PrintJob.computed_total_cost), else_=0)), 0),
+        )
+        .filter(
+            PrintJob.printer_id.in_(printer_ids),
+            PrintJob.recorded_at >= start,
+            PrintJob.recorded_at <= end,
+        )
     )
     if printer_id:
-        q = q.filter(PrintJob.printer_id == printer_id)
-
-    jobs = q.all()
-    paper = sum(float(j.computed_paper_cost) for j in jobs)
-    toner = sum(float(j.computed_toner_cost) for j in jobs)
-    waste = sum(float(j.computed_total_cost) for j in jobs if j.is_waste)
+        row = row.filter(PrintJob.printer_id == printer_id)
+    paper, toner, waste = row.one()
+    paper = float(paper); toner = float(toner); waste = float(waste)
 
     return {
         "data": {
@@ -271,23 +297,35 @@ async def toner_breakdown(
     if not printer_ids:
         return {"data": [], "message": "ok"}
 
-    q = db.query(PrintJob).filter(
-        PrintJob.printer_id.in_(printer_ids),
-        PrintJob.recorded_at >= start,
-        PrintJob.recorded_at <= end,
+    _EST_COLS = [
+        ("k", PrintJob.coverage_est_k), ("c", PrintJob.coverage_est_c),
+        ("m", PrintJob.coverage_est_m), ("y", PrintJob.coverage_est_y),
+        ("gld_1", PrintJob.coverage_est_gld_1), ("slv_1", PrintJob.coverage_est_slv_1),
+        ("clr_1", PrintJob.coverage_est_clr_1), ("wht_1", PrintJob.coverage_est_wht_1),
+        ("cr_1", PrintJob.coverage_est_cr_1), ("p_1", PrintJob.coverage_est_p_1),
+        ("pa_1", PrintJob.coverage_est_pa_1), ("gld_6", PrintJob.coverage_est_gld_6),
+        ("slv_6", PrintJob.coverage_est_slv_6), ("wht_6", PrintJob.coverage_est_wht_6),
+        ("p_6", PrintJob.coverage_est_p_6),
+    ]
+    rows = (
+        db.query(PrintJob.recorded_at, PrintJob.computed_paper_cost,
+                 *[col for _, col in _EST_COLS])
+        .filter(PrintJob.printer_id.in_(printer_ids),
+                PrintJob.recorded_at >= start, PrintJob.recorded_at <= end)
     )
     if printer_id:
-        q = q.filter(PrintJob.printer_id == printer_id)
-
+        rows = rows.filter(PrintJob.printer_id == printer_id)
     by_bucket: dict[str, dict] = {}
-    for j in q.all():
-        if not j.recorded_at:
+    for r in rows.all():
+        if not r[0]:
             continue
-        b = _bucket_key(j.recorded_at, granularity)
+        b = _bucket_key(r[0], granularity)
         slot = by_bucket.setdefault(b, {"bucket": b, "paper": 0.0})
-        slot["paper"] += float(j.computed_paper_cost)
-        for k, v in (j.computed_toner_cost_breakdown or {}).items():
-            slot[k] = slot.get(k, 0.0) + float(v)
+        slot["paper"] += float(r[1] or 0)
+        for i, (name, _) in enumerate(_EST_COLS):
+            v = r[2 + i]
+            if v:
+                slot[name] = slot.get(name, 0.0) + float(v)
 
     return {
         "data": sorted(by_bucket.values(), key=lambda x: x["bucket"]),
@@ -310,20 +348,22 @@ async def paper_breakdown(
     if not printer_ids:
         return {"data": [], "message": "ok"}
 
-    q = db.query(PrintJob).filter(
+    rows = db.query(
+        PrintJob.paper_type, PrintJob.computed_paper_cost, PrintJob.printed_pages
+    ).filter(
         PrintJob.printer_id.in_(printer_ids),
         PrintJob.recorded_at >= start,
         PrintJob.recorded_at <= end,
     )
     if printer_id:
-        q = q.filter(PrintJob.printer_id == printer_id)
+        rows = rows.filter(PrintJob.printer_id == printer_id)
 
     groups: dict[str, dict] = {}
-    for j in q.all():
-        key = j.paper_type or "(unknown)"
+    for paper_type, paper_cost, pages in rows.all():
+        key = paper_type or "(unknown)"
         slot = groups.setdefault(key, {"paper_type": key, "cost": 0.0, "pages": 0})
-        slot["cost"] += float(j.computed_paper_cost)
-        slot["pages"] += j.printed_pages
+        slot["cost"] += float(paper_cost)
+        slot["pages"] += pages
 
     data = sorted(groups.values(), key=lambda x: x["cost"], reverse=True)
     for d in data:
@@ -376,7 +416,6 @@ async def top_jobs(
                 "paper_cost": float(j.computed_paper_cost),
                 "toner_cost": float(j.computed_toner_cost),
                 "total_cost": float(j.computed_total_cost),
-                "breakdown": j.computed_toner_cost_breakdown,
                 "source": j.cost_computation_source,
                 "is_waste": j.is_waste,
             }

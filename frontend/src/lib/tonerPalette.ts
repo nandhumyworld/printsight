@@ -23,5 +23,6 @@ export const PAPER_COLORS = [
 ];
 
 export function colorForToner(key: string): string {
-  return TONER_COLORS[key.toLowerCase()] ?? "#9ca3af";
+  const normalized = key.toLowerCase().replace(/_1$/, "");
+  return TONER_COLORS[normalized] ?? "#9ca3af";
 }

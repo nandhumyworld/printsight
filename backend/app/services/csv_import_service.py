@@ -23,6 +23,7 @@ from app.models.upload import (
     UploadSource,
     UploadStatus,
 )
+from app.services.cost_calc import apply_cost_to_job, compute_job_cost, match_paper_for_job
 
 logger = logging.getLogger(__name__)
 
@@ -210,21 +211,6 @@ def _build_job(row, mapping, printer_id, batch_id) -> PrintJob:
         coverage_slv_6=_parse_coverage(_col(row, mapping, "coverage_slv_6")),
         coverage_wht_6=_parse_coverage(_col(row, mapping, "coverage_wht_6")),
         coverage_p_6=_parse_coverage(_col(row, mapping, "coverage_p_6")),
-        coverage_est_k=_parse_coverage(_col(row, mapping, "coverage_est_k")),
-        coverage_est_c=_parse_coverage(_col(row, mapping, "coverage_est_c")),
-        coverage_est_m=_parse_coverage(_col(row, mapping, "coverage_est_m")),
-        coverage_est_y=_parse_coverage(_col(row, mapping, "coverage_est_y")),
-        coverage_est_gld_1=_parse_coverage(_col(row, mapping, "coverage_est_gld_1")),
-        coverage_est_slv_1=_parse_coverage(_col(row, mapping, "coverage_est_slv_1")),
-        coverage_est_clr_1=_parse_coverage(_col(row, mapping, "coverage_est_clr_1")),
-        coverage_est_wht_1=_parse_coverage(_col(row, mapping, "coverage_est_wht_1")),
-        coverage_est_cr_1=_parse_coverage(_col(row, mapping, "coverage_est_cr_1")),
-        coverage_est_p_1=_parse_coverage(_col(row, mapping, "coverage_est_p_1")),
-        coverage_est_pa_1=_parse_coverage(_col(row, mapping, "coverage_est_pa_1")),
-        coverage_est_gld_6=_parse_coverage(_col(row, mapping, "coverage_est_gld_6")),
-        coverage_est_slv_6=_parse_coverage(_col(row, mapping, "coverage_est_slv_6")),
-        coverage_est_wht_6=_parse_coverage(_col(row, mapping, "coverage_est_wht_6")),
-        coverage_est_p_6=_parse_coverage(_col(row, mapping, "coverage_est_p_6")),
         computed_paper_cost=Decimal("0"),
         computed_toner_cost=Decimal("0"),
         computed_total_cost=Decimal("0"),
@@ -269,6 +255,29 @@ def import_csv_for_printer(
         printer_column_mapping = dict(printer.column_mapping)
     finally:
         _lookup.close()
+
+    # Cost inputs — loaded once, detached, reused across all chunks.
+    from sqlalchemy.orm import joinedload
+    from app.models.paper import Paper
+    from app.models.toner import Toner
+
+    _cost_setup = SessionLocal()
+    try:
+        toners = (
+            _cost_setup.query(Toner)
+            .options(joinedload(Toner.replacement_logs))
+            .filter(Toner.printer_id == printer_id)
+            .all()
+        )
+        papers = (
+            _cost_setup.query(Paper)
+            .join(Paper.printer_links)
+            .filter_by(printer_id=printer_id)
+            .all()
+        )
+        _cost_setup.expunge_all()
+    finally:
+        _cost_setup.close()
 
     # 2. Parse CSV (no DB writes yet)
     # Reject obvious binary garbage (null bytes) up front — pandas silently
@@ -346,12 +355,33 @@ def import_csv_for_printer(
             jobs_to_add.append(_build_job(row, mapping, printer_id, batch_id))
             batch_keys.add(dup_key)
 
+        costed = 0
+        zero_toner = 0
+        for job in jobs_to_add:
+            try:
+                matched = match_paper_for_job(job, papers)
+                job.matched_paper_id = matched.id if matched else None
+                result = compute_job_cost(job, toners=toners, matched_paper=matched)
+                apply_cost_to_job(job, result)
+                costed += 1
+                if result["toner_cost"] == 0:
+                    zero_toner += 1
+            except Exception as job_err:
+                logger.warning(
+                    "cost compute failed printer=%s job_id=%s: %s",
+                    printer_id, getattr(job, "job_id", "?"), job_err,
+                )
+
         if jobs_to_add:
             chunk_session = SessionLocal()
             try:
                 chunk_session.add_all(jobs_to_add)
                 chunk_session.commit()
                 imported += len(jobs_to_add)
+                logger.info(
+                    "csv_import costed chunk printer=%s batch=%s jobs=%d zero_toner=%d",
+                    printer_id, batch_id, costed, zero_toner,
+                )
             except Exception as e:
                 chunk_session.rollback()
                 logger.error(

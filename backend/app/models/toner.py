@@ -33,6 +33,7 @@ class Toner(Base, TimestampMixin):
     __tablename__ = "toners"
     __table_args__ = (
         UniqueConstraint("printer_id", "toner_color", name="uq_toners_printer_color"),
+        UniqueConstraint("printer_id", "coverage_channel", name="uq_toners_printer_channel"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -42,6 +43,7 @@ class Toner(Base, TimestampMixin):
         index=True,
     )
     toner_color: Mapped[str] = mapped_column(String(50), nullable=False)
+    coverage_channel: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     toner_type: Mapped[TonerType] = mapped_column(
         Enum(TonerType, name="toner_type"),
         nullable=False,

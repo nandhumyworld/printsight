@@ -6,6 +6,7 @@ per-color toner cost, total, and metadata about which data source was used.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Iterable, Optional
 
@@ -73,21 +74,13 @@ def _pricing_for_toner(toner, recorded_at):
     )
 
 
-def _pick_coverage(job, attr_actual: str, attr_est: str) -> tuple[Optional[Decimal], str]:
+def _pick_coverage(job, attr_actual: str) -> tuple[Optional[Decimal], str]:
     val = getattr(job, attr_actual, None)
     if val is not None:
         try:
             d = Decimal(str(val))
             if d > 0:
                 return d, "actual"
-        except Exception:
-            pass
-    val = getattr(job, attr_est, None)
-    if val is not None:
-        try:
-            d = Decimal(str(val))
-            if d > 0:
-                return d, "estimation"
         except Exception:
             pass
     return None, "unavailable"
@@ -158,8 +151,8 @@ def match_paper_for_job(job, papers: Iterable):
 def compute_job_cost(job, *, toners, matched_paper) -> dict:
     """Compute paper + per-color toner cost for a single job.
 
-    Returns dict with keys: paper_cost, toner_cost, total_cost, breakdown, source.
-    Does not mutate the job object.
+    Returns dict with keys: paper_cost, toner_cost, total_cost,
+    per_channel_cost, source. Does not mutate the job object.
     """
     # Paper cost
     if matched_paper is not None:
@@ -172,34 +165,38 @@ def compute_job_cost(job, *, toners, matched_paper) -> dict:
     else:
         paper_cost = Decimal("0")
 
-    breakdown: dict[str, float] = {}
+    per_channel_cost: dict[str, float] = {}
     sources: set[str] = set()
     toner_total = Decimal("0")
 
     recorded_at = getattr(job, "recorded_at", None)
 
     for t in toners:
-        color_key = _normalize_color(t.toner_color)
+        color_key = getattr(t, "coverage_channel", None) or _normalize_color(t.toner_color)
         if color_key not in _COLOR_MAP:
             continue
         cov_attr, est_attr, pages_attr = _COLOR_MAP[color_key]
-        coverage, src = _pick_coverage(job, cov_attr, est_attr)
+        coverage, src = _pick_coverage(job, cov_attr)
         pages = _pages_for_color(job, pages_attr)
 
         sources.add(src)
         if coverage is None or pages == 0:
-            breakdown[color_key.lower()] = 0.0
+            per_channel_cost[est_attr] = 0.0
             continue
 
         price, yield_pages, ref_cov = _pricing_for_toner(t, recorded_at)
         if yield_pages == 0 or ref_cov == 0:
-            breakdown[color_key.lower()] = 0.0
+            per_channel_cost[est_attr] = 0.0
             continue
 
         price_per_page = price / Decimal(yield_pages)
-        cost = (coverage / ref_cov) * price_per_page * Decimal(pages)
+        # Raster coverage is already the cumulative total across all pages of the
+        # job (e.g. a 2-page job at ~5.85%/page reports 11.7%), so it must NOT be
+        # multiplied by page count again — that double-counts. `pages` is retained
+        # only as a guard above (a color with 0 relevant pages contributes 0).
+        cost = (coverage / ref_cov) * price_per_page
         toner_total += cost
-        breakdown[color_key.lower()] = float(round(cost, 4))
+        per_channel_cost[est_attr] = float(round(cost, 4))
 
     sources.discard("unavailable")
     if sources == {"actual"}:
@@ -216,6 +213,17 @@ def compute_job_cost(job, *, toners, matched_paper) -> dict:
         "paper_cost": float(round(paper_cost, 4)),
         "toner_cost": float(round(toner_total, 4)),
         "total_cost": float(round(total, 4)),
-        "breakdown": breakdown,
+        "per_channel_cost": per_channel_cost,
         "source": source_flag,
     }
+
+
+def apply_cost_to_job(job, result: dict) -> None:
+    """Persist a compute_job_cost result onto a PrintJob (no commit)."""
+    for est_attr, val in result["per_channel_cost"].items():
+        setattr(job, est_attr, Decimal(str(val)))
+    job.computed_paper_cost = Decimal(str(result["paper_cost"]))
+    job.computed_toner_cost = Decimal(str(result["toner_cost"]))
+    job.computed_total_cost = Decimal(str(result["total_cost"]))
+    job.cost_computation_source = result["source"]
+    job.cost_computed_at = datetime.now(timezone.utc)

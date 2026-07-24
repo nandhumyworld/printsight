@@ -30,6 +30,25 @@ const FIELD_TO_TONER: Record<string, { color: string; type: 'standard' | 'specia
   pink_pages:     { color: 'Pink',    type: 'specialty' },
 };
 
+// Channel key -> its raster-coverage column + display label. Mirrors backend _COLOR_MAP.
+const CHANNEL_CATALOG: Record<string, { coverageField: string; label: string }> = {
+  K:     { coverageField: 'coverage_k',      label: 'Black (K)' },
+  C:     { coverageField: 'coverage_c',      label: 'Cyan (C)' },
+  M:     { coverageField: 'coverage_m',      label: 'Magenta (M)' },
+  Y:     { coverageField: 'coverage_y',      label: 'Yellow (Y)' },
+  GLD:   { coverageField: 'coverage_gld_1',  label: 'Gold #1' },
+  SLV:   { coverageField: 'coverage_slv_1',  label: 'Silver #1' },
+  CLR:   { coverageField: 'coverage_clr_1',  label: 'Clear #1' },
+  WHT:   { coverageField: 'coverage_wht_1',  label: 'White #1' },
+  CR:    { coverageField: 'coverage_cr_1',   label: 'Texture (CR #1)' },
+  P:     { coverageField: 'coverage_p_1',    label: 'Pink #1' },
+  PA:    { coverageField: 'coverage_pa_1',   label: 'PA #1' },
+  GLD_6: { coverageField: 'coverage_gld_6',  label: 'Gold #6' },
+  SLV_6: { coverageField: 'coverage_slv_6',  label: 'Silver #6' },
+  WHT_6: { coverageField: 'coverage_wht_6',  label: 'White #6' },
+  P_6:   { coverageField: 'coverage_p_6',    label: 'Pink #6' },
+};
+
 // Standard colors always shown
 const STANDARD_COLORS = [
   { color: 'Black',   type: 'standard' as const },
@@ -44,9 +63,9 @@ function TonerManagement({ printerId, columnMapping }: {
 }) {
   const qc = useQueryClient();
   const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ toner_color: '', toner_type: 'standard', price_per_unit: '', rated_yield_pages: '', reference_coverage_pct: '5.00', currency: 'INR' });
+  const [form, setForm] = useState({ toner_color: '', coverage_channel: '', toner_type: 'standard', price_per_unit: '', rated_yield_pages: '', reference_coverage_pct: '5.00', currency: 'INR' });
   const [editToner, setEditToner] = useState<any | null>(null);
-  const [editForm, setEditForm] = useState({ price_per_unit: '', rated_yield_pages: '', reference_coverage_pct: '5.00', currency: 'INR' });
+  const [editForm, setEditForm] = useState({ coverage_channel: '', price_per_unit: '', rated_yield_pages: '', reference_coverage_pct: '5.00', currency: 'INR' });
 
   const { data: toners, isLoading } = useQuery({
     queryKey: ['toners', printerId],
@@ -68,9 +87,15 @@ function TonerManagement({ printerId, columnMapping }: {
   const existingColors = new Set((toners ?? []).map((t: any) => t.toner_color));
   const missingMapped = suggestedColors.filter(c => !existingColors.has(c.color));
 
+  // Channels whose coverage column is mapped for this printer
+  const availableChannels = Object.entries(CHANNEL_CATALOG)
+    .filter(([, v]) => v.coverageField in (columnMapping ?? {}))
+    .map(([key, v]) => ({ key, label: v.label }));
+
   const addToner = useMutation({
     mutationFn: () => api.post(`/printers/${printerId}/toners`, {
       toner_color: form.toner_color,
+      coverage_channel: form.coverage_channel,
       toner_type: form.toner_type,
       price_per_unit: parseFloat(form.price_per_unit),
       rated_yield_pages: parseInt(form.rated_yield_pages),
@@ -79,7 +104,7 @@ function TonerManagement({ printerId, columnMapping }: {
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['toners', printerId] });
-      setForm({ toner_color: '', toner_type: 'standard', price_per_unit: '', rated_yield_pages: '', reference_coverage_pct: '5.00', currency: 'INR' });
+      setForm({ toner_color: '', coverage_channel: '', toner_type: 'standard', price_per_unit: '', rated_yield_pages: '', reference_coverage_pct: '5.00', currency: 'INR' });
       setShowAdd(false);
     },
   });
@@ -92,6 +117,7 @@ function TonerManagement({ printerId, columnMapping }: {
   const updateToner = useMutation({
     mutationFn: () => api.put(`/printers/${printerId}/toners/${editToner.id}`, {
       toner_color: editToner.toner_color,
+      coverage_channel: editForm.coverage_channel,
       toner_type: editToner.toner_type,
       price_per_unit: parseFloat(editForm.price_per_unit),
       rated_yield_pages: parseInt(editForm.rated_yield_pages),
@@ -197,6 +223,25 @@ function TonerManagement({ printerId, columnMapping }: {
                 </p>
               )}
             </div>
+            <div className="space-y-1 col-span-2">
+              <Label>Coverage Column *</Label>
+              <select
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                value={form.coverage_channel}
+                onChange={e => setForm(p => ({ ...p, coverage_channel: e.target.value }))}
+              >
+                <option value="">Select coverage column...</option>
+                {availableChannels.map(c => (
+                  <option key={c.key} value={c.key}>{c.label}</option>
+                ))}
+              </select>
+              {availableChannels.length === 0 && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  No raster-coverage columns are mapped for this printer. Map them in{' '}
+                  <a href={`/printers/${printerId}/mapping`} className="text-primary hover:underline">Column Mapping</a> first.
+                </p>
+              )}
+            </div>
             <div className="space-y-1">
               <Label>Type</Label>
               <select
@@ -240,7 +285,7 @@ function TonerManagement({ printerId, columnMapping }: {
             <Button
               size="sm"
               onClick={() => addToner.mutate()}
-              disabled={!form.toner_color || form.toner_color === '__custom__' || !form.price_per_unit || !form.rated_yield_pages || addToner.isPending}
+              disabled={!form.toner_color || form.toner_color === '__custom__' || !form.coverage_channel || !form.price_per_unit || !form.rated_yield_pages || addToner.isPending}
             >
               {addToner.isPending ? 'Adding...' : 'Add Toner'}
             </Button>
@@ -274,7 +319,14 @@ function TonerManagement({ printerId, columnMapping }: {
             <tbody className="divide-y">
               {toners.map((t: any) => (
                 <tr key={t.id} className="hover:bg-muted/30">
-                  <td className="px-4 py-2.5 font-medium">{t.toner_color}</td>
+                  <td className="px-4 py-2.5 font-medium">
+                    {t.toner_color}
+                    {!t.coverage_channel && (
+                      <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-normal text-amber-700">
+                        set coverage column
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-2.5 text-muted-foreground capitalize">{t.toner_type}</td>
                   <td className="px-4 py-2.5 text-right">{t.currency} {parseFloat(t.price_per_unit).toLocaleString()}</td>
                   <td className="px-4 py-2.5 text-right">{t.rated_yield_pages.toLocaleString()} pages</td>
@@ -283,7 +335,7 @@ function TonerManagement({ printerId, columnMapping }: {
                       <button
                         onClick={() => {
                           setEditToner(t);
-                          setEditForm({ price_per_unit: String(t.price_per_unit), rated_yield_pages: String(t.rated_yield_pages), reference_coverage_pct: String(t.reference_coverage_pct ?? '5.00'), currency: t.currency });
+                          setEditForm({ coverage_channel: t.coverage_channel ?? '', price_per_unit: String(t.price_per_unit), rated_yield_pages: String(t.rated_yield_pages), reference_coverage_pct: String(t.reference_coverage_pct ?? '5.00'), currency: t.currency });
                         }}
                         className="text-muted-foreground hover:text-primary p-1"
                       >
@@ -311,6 +363,19 @@ function TonerManagement({ printerId, columnMapping }: {
             <h3 className="font-semibold">Edit {editToner.toner_color} Toner</h3>
             <div className="space-y-3">
               <div className="space-y-1">
+                <Label>Coverage Column *</Label>
+                <select
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                  value={editForm.coverage_channel}
+                  onChange={e => setEditForm(p => ({ ...p, coverage_channel: e.target.value }))}
+                >
+                  <option value="">Select coverage column...</option>
+                  {availableChannels.map(c => (
+                    <option key={c.key} value={c.key}>{c.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
                 <Label>Price per Unit</Label>
                 <Input type="number" min="0" step="0.01" value={editForm.price_per_unit} onChange={e => setEditForm(p => ({ ...p, price_per_unit: e.target.value }))} />
               </div>
@@ -337,7 +402,7 @@ function TonerManagement({ printerId, columnMapping }: {
             {updateToner.isError && <p className="text-sm text-destructive">{(updateToner.error as any)?.response?.data?.detail || 'Update failed'}</p>}
             <div className="flex gap-3">
               <Button variant="outline" size="sm" onClick={() => setEditToner(null)}>Cancel</Button>
-              <Button size="sm" onClick={() => updateToner.mutate()} disabled={updateToner.isPending} isLoading={updateToner.isPending}>Save</Button>
+              <Button size="sm" onClick={() => updateToner.mutate()} disabled={updateToner.isPending || !editForm.coverage_channel} isLoading={updateToner.isPending}>Save</Button>
             </div>
           </div>
         </div>
