@@ -12,6 +12,7 @@ from app.config import get_settings, settings
 from app.database import Base
 from app.main import app
 from app.models.printer import Printer
+from app.models.upload import PrintJob, UploadBatch
 from app.models.user import User, UserRole
 
 
@@ -84,6 +85,32 @@ def second_printer(db_session, test_user) -> Printer:
     db_session.commit()
     db_session.refresh(p)
     yield p
+    db_session.delete(p)
+    db_session.commit()
+
+
+@pytest.fixture
+def printer_with_status_mapping(db_session, test_user) -> Printer:
+    """Printer whose column mapping includes `status`, for report status filtering."""
+    p = Printer(
+        owner_id=test_user.id,
+        name="Status Printer",
+        column_mapping={
+            "job_id": "job_id",
+            "recorded_at": "recorded_at",
+            "status": "status",
+            "printed_pages": "printed_pages",
+            "color_pages": "color_pages",
+            "bw_pages": "bw_pages",
+        },
+    )
+    db_session.add(p)
+    db_session.commit()
+    db_session.refresh(p)
+    yield p
+    db_session.query(PrintJob).filter(PrintJob.printer_id == p.id).delete()
+    db_session.query(UploadBatch).filter(UploadBatch.printer_id == p.id).delete()
+    db_session.commit()
     db_session.delete(p)
     db_session.commit()
 

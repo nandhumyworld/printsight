@@ -10,7 +10,6 @@ import {
 } from 'recharts';
 import { Download, Search, FileText, ChevronLeft, ChevronRight } from 'lucide-react';
 
-const STATUS_OPTIONS = ['all', 'completed', 'failed', 'cancelled'];
 const SORT_OPTIONS = [
   { label: 'Date (newest)', value: 'recorded_at_desc' },
   { label: 'Date (oldest)', value: 'recorded_at_asc' },
@@ -18,11 +17,33 @@ const SORT_OPTIONS = [
   { label: 'Pages (low)', value: 'printed_pages_asc' },
   { label: 'Job Name', value: 'job_name_asc' },
 ];
-const PIE_COLORS: Record<string, string> = {
-  completed: '#22c55e',
-  failed: '#ef4444',
-  cancelled: '#f59e0b',
+/** Classify a free-text CSV status into a colour family.
+ *  Values arrive as "Printing Completed", "RIP Completed", "Deleted", "Held", "Error",
+ *  so match on keywords rather than exact strings. */
+function statusKind(status: string | null | undefined): 'ok' | 'error' | 'dropped' | 'pending' | 'unknown' {
+  const s = (status || '').toLowerCase();
+  if (!s) return 'unknown';
+  if (s.includes('complet')) return 'ok';
+  if (s.includes('error') || s.includes('fail')) return 'error';
+  if (s.includes('cancel') || s.includes('delet') || s.includes('abort')) return 'dropped';
+  if (s.includes('held') || s.includes('hold') || s.includes('wait') || s.includes('queue')) return 'pending';
+  return 'unknown';
+}
+
+const KIND_HEX: Record<ReturnType<typeof statusKind>, string> = {
+  ok: '#22c55e',
+  error: '#ef4444',
+  dropped: '#f59e0b',
+  pending: '#3b82f6',
   unknown: '#94a3b8',
+};
+
+const KIND_BADGE: Record<ReturnType<typeof statusKind>, string> = {
+  ok: 'bg-green-100 text-green-700',
+  error: 'bg-red-100 text-red-700',
+  dropped: 'bg-amber-100 text-amber-700',
+  pending: 'bg-blue-100 text-blue-700',
+  unknown: 'bg-gray-100 text-gray-600',
 };
 
 function StatCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
@@ -52,6 +73,18 @@ export default function ReportsPage() {
   const { data: printersData } = useQuery({
     queryKey: ['printers'],
     queryFn: () => api.get('/printers').then(r => r.data.data),
+  });
+
+  // Statuses are free text from each printer's CSV export, so the filter options
+  // come from the data rather than a fixed list. Scoped to the selected printers.
+  const { data: statusOptions } = useQuery<{ value: string; count: number }[]>({
+    queryKey: ['report-statuses', filters.printer_ids],
+    queryFn: () =>
+      api
+        .get('/reports/statuses', {
+          params: { printer_ids: filters.printer_ids || undefined },
+        })
+        .then(r => r.data.data),
   });
 
   const [sort_by, sort_dir] = filters.sort.split('_').reduce<[string, string]>((acc, part, idx, arr) => {
@@ -181,9 +214,17 @@ export default function ReportsPage() {
             onChange={e => set('status')(e.target.value)}
             className="rounded-md border border-border bg-background px-3 py-2 text-sm"
           >
-            {STATUS_OPTIONS.map(s => (
-              <option key={s} value={s}>{s === 'all' ? 'All Statuses' : s.charAt(0).toUpperCase() + s.slice(1)}</option>
+            <option value="all">All Statuses</option>
+            {(statusOptions ?? []).map(s => (
+              <option key={s.value} value={s.value}>{s.value} ({s.count})</option>
             ))}
+            {/* Keep the active filter selectable even if the current printer scope
+                has no jobs with it — otherwise the select would show "All Statuses"
+                while the filter is still applied. */}
+            {filters.status !== 'all' &&
+              !(statusOptions ?? []).some(s => s.value === filters.status) && (
+                <option value={filters.status}>{filters.status} (0)</option>
+              )}
           </select>
 
           {/* Sort */}
@@ -253,7 +294,7 @@ export default function ReportsPage() {
                   <Pie data={statusGroups} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80}
                     label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
                     {statusGroups.map((entry, i) => (
-                      <Cell key={i} fill={PIE_COLORS[entry.name] ?? '#94a3b8'} />
+                      <Cell key={i} fill={KIND_HEX[statusKind(entry.name)]} />
                     ))}
                   </Pie>
                   <Tooltip />
@@ -315,12 +356,7 @@ export default function ReportsPage() {
                     <td className="px-4 py-2.5 text-right text-muted-foreground">{j.bw_pages || '—'}</td>
                     <td className="px-4 py-2.5 text-xs text-muted-foreground">{j.paper_type || '—'}</td>
                     <td className="px-4 py-2.5">
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                        j.status === 'completed' ? 'bg-green-100 text-green-700' :
-                        j.status === 'failed' ? 'bg-red-100 text-red-700' :
-                        j.status === 'cancelled' ? 'bg-amber-100 text-amber-700' :
-                        'bg-gray-100 text-gray-600'
-                      }`}>
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${KIND_BADGE[statusKind(j.status)]}`}>
                         {j.status || 'unknown'}
                       </span>
                     </td>
