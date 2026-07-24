@@ -23,6 +23,7 @@ from app.models.upload import (
     UploadSource,
     UploadStatus,
 )
+from app.services.cost_calc import apply_cost_to_job, compute_job_cost, match_paper_for_job
 
 logger = logging.getLogger(__name__)
 
@@ -270,6 +271,29 @@ def import_csv_for_printer(
     finally:
         _lookup.close()
 
+    # Cost inputs — loaded once, detached, reused across all chunks.
+    from sqlalchemy.orm import joinedload
+    from app.models.paper import Paper
+    from app.models.toner import Toner
+
+    _cost_setup = SessionLocal()
+    try:
+        toners = (
+            _cost_setup.query(Toner)
+            .options(joinedload(Toner.replacement_logs))
+            .filter(Toner.printer_id == printer_id)
+            .all()
+        )
+        papers = (
+            _cost_setup.query(Paper)
+            .join(Paper.printer_links)
+            .filter_by(printer_id=printer_id)
+            .all()
+        )
+        _cost_setup.expunge_all()
+    finally:
+        _cost_setup.close()
+
     # 2. Parse CSV (no DB writes yet)
     # Reject obvious binary garbage (null bytes) up front — pandas silently
     # accepts them and yields an empty/bogus frame, which would otherwise
@@ -346,12 +370,33 @@ def import_csv_for_printer(
             jobs_to_add.append(_build_job(row, mapping, printer_id, batch_id))
             batch_keys.add(dup_key)
 
+        costed = 0
+        zero_toner = 0
+        for job in jobs_to_add:
+            try:
+                matched = match_paper_for_job(job, papers)
+                job.matched_paper_id = matched.id if matched else None
+                result = compute_job_cost(job, toners=toners, matched_paper=matched)
+                apply_cost_to_job(job, result)
+                costed += 1
+                if result["toner_cost"] == 0:
+                    zero_toner += 1
+            except Exception as job_err:
+                logger.warning(
+                    "cost compute failed printer=%s job_id=%s: %s",
+                    printer_id, getattr(job, "job_id", "?"), job_err,
+                )
+
         if jobs_to_add:
             chunk_session = SessionLocal()
             try:
                 chunk_session.add_all(jobs_to_add)
                 chunk_session.commit()
                 imported += len(jobs_to_add)
+                logger.info(
+                    "csv_import costed chunk printer=%s batch=%s jobs=%d zero_toner=%d",
+                    printer_id, batch_id, costed, zero_toner,
+                )
             except Exception as e:
                 chunk_session.rollback()
                 logger.error(
