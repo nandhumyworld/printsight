@@ -37,7 +37,17 @@
       "mcp__plugin_chrome-devtools-mcp_chrome-devtools__list_pages",
       "mcp__plugin_playwright_playwright__browser_navigate",
       "Bash(git add *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "mcp__n8n-mcp__list_credentials",
+      "mcp__n8n-mcp__search_workflows",
+      "mcp__n8n-mcp__get_workflow_details",
+      "mcp__n8n-mcp__validate_workflow",
+      "mcp__n8n-mcp__update_workflow",
+      "PowerShell(git remote -v; echo \"=== repo visibility ===\"; gh repo view --json visibility,nameWithOwner 2>&1 | Select-Object -First 5; echo \"=== GLD in code ===\"; git grep -n \"GLD\" -- \"*.py\" | Select-Object -First 12)"
     ]
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "n8n-mcp"
+  ]
 }

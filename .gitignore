@@ -43,3 +43,9 @@ uploads/
 n8n/Gdrivekey/
 n8n/**/*.json
 n8n/**/*serviceaccount*
+
+# MCP server configs — contain bearer tokens / API keys
+.mcp.json
+
+# Sample export — contains real customer job names/owners
+resourses/sample.csv
