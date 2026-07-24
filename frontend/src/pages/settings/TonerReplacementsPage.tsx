@@ -162,80 +162,87 @@ export default function TonerReplacementsPage() {
   });
 
   return (
-    <div className="max-w-4xl space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Toner Replacements</h1>
-          <p className="text-sm text-muted-foreground mt-1">Track toner cartridge changes and yield efficiency</p>
-        </div>
-        <Button onClick={() => setShowAdd(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Log Replacement
-        </Button>
-      </div>
-
-      {showAdd && printers && (
-        <AddReplacementForm printers={printers} onDone={() => setShowAdd(false)} />
-      )}
-
-      <div className="rounded-lg border bg-card overflow-hidden">
-        {isLoading ? (
-          <div className="p-8 text-center text-muted-foreground">Loading...</div>
-        ) : !replacements || replacements.length === 0 ? (
-          <div className="p-12 text-center text-muted-foreground">
-            <p>No toner replacements logged yet.</p>
-            <button onClick={() => setShowAdd(true)} className="mt-2 text-sm text-primary hover:underline">
-              Log the first replacement →
-            </button>
+    <div className="relative">
+      <div className="pointer-events-none max-w-4xl space-y-6 opacity-50">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">Toner Replacements</h1>
+            <p className="text-sm text-muted-foreground mt-1">Track toner cartridge changes and yield efficiency</p>
           </div>
-        ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-xs text-muted-foreground">
-              <tr>
-                <th className="px-4 py-3 text-left">Date</th>
-                <th className="px-4 py-3 text-left">Printer</th>
-                <th className="px-4 py-3 text-left">Toner</th>
-                <th className="px-4 py-3 text-right">Counter</th>
-                <th className="px-4 py-3 text-right">Cart. Price</th>
-                <th className="px-4 py-3 text-right">Actual Yield</th>
-                <th className="px-4 py-3 text-right">Efficiency</th>
-                <th className="px-4 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {replacements.map((r: any) => (
-                <tr key={r.id} className="hover:bg-muted/30">
-                  <td className="px-4 py-3">{formatDate(r.replaced_at)}</td>
-                  <td className="px-4 py-3">
-                    {printers?.find((p: any) => p.id === r.printer_id)?.name ?? `Printer #${r.printer_id}`}
-                  </td>
-                  <td className="px-4 py-3">
-                    {r.toner_color ? `${r.toner_color}${r.toner_type ? ` (${r.toner_type})` : ''}` : `Toner #${r.toner_id}`}
-                  </td>
-                  <td className="px-4 py-3 text-right text-muted-foreground">{r.counter_reading_at_replacement.toLocaleString()}</td>
-                  <td className="px-4 py-3 text-right text-muted-foreground">
-                    {r.cartridge_price_per_unit != null ? `${r.cartridge_currency ?? 'INR'} ${parseFloat(r.cartridge_price_per_unit).toLocaleString()}` : '—'}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    {r.actual_yield_pages != null ? r.actual_yield_pages.toLocaleString() : '—'}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    {r.yield_efficiency_pct != null ? (
-                      <span className={`font-medium ${r.yield_efficiency_pct >= 90 ? 'text-green-600' : r.yield_efficiency_pct >= 70 ? 'text-yellow-600' : 'text-red-600'}`}>
-                        {parseFloat(r.yield_efficiency_pct).toFixed(1)}%
-                      </span>
-                    ) : '—'}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <button onClick={() => del.mutate(r.id)} className="text-muted-foreground hover:text-destructive p-1">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <Button onClick={() => setShowAdd(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Log Replacement
+          </Button>
+        </div>
+
+        {showAdd && printers && (
+          <AddReplacementForm printers={printers} onDone={() => setShowAdd(false)} />
         )}
+
+        <div className="rounded-lg border bg-card overflow-hidden">
+          {isLoading ? (
+            <div className="p-8 text-center text-muted-foreground">Loading...</div>
+          ) : !replacements || replacements.length === 0 ? (
+            <div className="p-12 text-center text-muted-foreground">
+              <p>No toner replacements logged yet.</p>
+              <button onClick={() => setShowAdd(true)} className="mt-2 text-sm text-primary hover:underline">
+                Log the first replacement →
+              </button>
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 text-xs text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-3 text-left">Date</th>
+                  <th className="px-4 py-3 text-left">Printer</th>
+                  <th className="px-4 py-3 text-left">Toner</th>
+                  <th className="px-4 py-3 text-right">Counter</th>
+                  <th className="px-4 py-3 text-right">Cart. Price</th>
+                  <th className="px-4 py-3 text-right">Actual Yield</th>
+                  <th className="px-4 py-3 text-right">Efficiency</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {replacements.map((r: any) => (
+                  <tr key={r.id} className="hover:bg-muted/30">
+                    <td className="px-4 py-3">{formatDate(r.replaced_at)}</td>
+                    <td className="px-4 py-3">
+                      {printers?.find((p: any) => p.id === r.printer_id)?.name ?? `Printer #${r.printer_id}`}
+                    </td>
+                    <td className="px-4 py-3">
+                      {r.toner_color ? `${r.toner_color}${r.toner_type ? ` (${r.toner_type})` : ''}` : `Toner #${r.toner_id}`}
+                    </td>
+                    <td className="px-4 py-3 text-right text-muted-foreground">{r.counter_reading_at_replacement.toLocaleString()}</td>
+                    <td className="px-4 py-3 text-right text-muted-foreground">
+                      {r.cartridge_price_per_unit != null ? `${r.cartridge_currency ?? 'INR'} ${parseFloat(r.cartridge_price_per_unit).toLocaleString()}` : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {r.actual_yield_pages != null ? r.actual_yield_pages.toLocaleString() : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {r.yield_efficiency_pct != null ? (
+                        <span className={`font-medium ${r.yield_efficiency_pct >= 90 ? 'text-green-600' : r.yield_efficiency_pct >= 70 ? 'text-yellow-600' : 'text-red-600'}`}>
+                          {parseFloat(r.yield_efficiency_pct).toFixed(1)}%
+                        </span>
+                      ) : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button onClick={() => del.mutate(r.id)} className="text-muted-foreground hover:text-destructive p-1">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className="rounded bg-gray-800/80 px-4 py-2 text-sm text-white">
+          Toner replacement — coming soon
+        </span>
       </div>
     </div>
   );

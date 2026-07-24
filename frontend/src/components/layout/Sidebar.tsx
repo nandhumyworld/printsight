@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import React, { useState } from 'react';
 
-interface NavItem { label: string; to: string; icon: React.ElementType; ownerOnly?: boolean; }
+interface NavItem { label: string; to: string; icon: React.ElementType; ownerOnly?: boolean; disabled?: boolean; }
 interface NavGroup { label: string; icon: React.ElementType; items: NavItem[]; }
 
 const navGroups: NavGroup[] = [
@@ -37,7 +37,7 @@ const navGroups: NavGroup[] = [
     icon: Settings,
     items: [
       { label: 'Paper & Ink Costs', to: '/settings/costs', icon: Settings, ownerOnly: true },
-      { label: 'Toner Replacements', to: '/settings/toner-replacements', icon: Settings },
+      { label: 'Toner Replacements', to: '/settings/toner-replacements', icon: Settings, disabled: true },
       { label: 'Notifications', to: '/settings/notifications', icon: Settings, ownerOnly: true },
       { label: 'Webhooks', to: '/settings/webhooks', icon: Settings, ownerOnly: true },
     ],
@@ -72,17 +72,28 @@ export function Sidebar() {
                 <ChevronDown className={cn('h-3 w-3 transition-transform', isOpen && 'rotate-180')} />
               </button>
               {isOpen && visibleItems.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  className={({ isActive }) =>
-                    cn('flex items-center gap-3 px-4 py-2 text-sm transition-colors',
-                      isActive ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:bg-muted hover:text-foreground')
-                  }
-                >
-                  <item.icon className="h-4 w-4" />
-                  {item.label}
-                </NavLink>
+                item.disabled ? (
+                  <span
+                    key={item.to}
+                    title="Coming soon"
+                    className="flex cursor-not-allowed items-center gap-3 px-4 py-2 text-sm text-muted-foreground/50"
+                  >
+                    <item.icon className="h-4 w-4" />
+                    {item.label}
+                  </span>
+                ) : (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    className={({ isActive }) =>
+                      cn('flex items-center gap-3 px-4 py-2 text-sm transition-colors',
+                        isActive ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:bg-muted hover:text-foreground')
+                    }
+                  >
+                    <item.icon className="h-4 w-4" />
+                    {item.label}
+                  </NavLink>
+                )
               ))}
             </div>
           );

@@ -1,5 +1,3 @@
-import { colorForToner } from "@/lib/tonerPalette";
-
 interface Job {
   job_id: string;
   job_name?: string | null;
@@ -8,7 +6,6 @@ interface Job {
   paper_cost: number;
   toner_cost: number;
   total_cost: number;
-  breakdown: Record<string, number>;
   source: string | null;
   is_waste: boolean;
   recorded_at: string | null;
@@ -18,9 +15,6 @@ interface Props { job: Job | null; onClose: () => void }
 
 export function JobDetailDrawer({ job, onClose }: Props) {
   if (!job) return null;
-
-  const breakdownEntries = Object.entries(job.breakdown || {}).filter(([, v]) => v > 0);
-  const maxVal = breakdownEntries.reduce((m, [, v]) => Math.max(m, v), 0);
 
   return (
     <div className="fixed inset-0 z-30 flex justify-end" onClick={onClose}>
@@ -68,33 +62,6 @@ export function JobDetailDrawer({ job, onClose }: Props) {
           <div className="mb-3 text-xs text-muted-foreground">
             Paper type: <span className="text-foreground">{job.paper_type}</span>
             {job.printed_pages > 0 && ` · ${job.printed_pages} pages`}
-          </div>
-        )}
-
-        {breakdownEntries.length > 0 && (
-          <div className="mt-4">
-            <div className="mb-2 text-sm font-semibold">Per-color toner cost</div>
-            <div className="space-y-2">
-              {breakdownEntries.map(([k, v]) => (
-                <div key={k} className="flex items-center gap-2">
-                  <span
-                    className="inline-block h-3 w-3 shrink-0 rounded-full border border-border"
-                    style={{ background: colorForToner(k) }}
-                  />
-                  <span className="w-12 text-xs uppercase text-muted-foreground">{k}</span>
-                  <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-                    <div
-                      className="h-2 rounded-full"
-                      style={{
-                        background: colorForToner(k),
-                        width: maxVal > 0 ? `${(v / maxVal) * 100}%` : "0%",
-                      }}
-                    />
-                  </div>
-                  <span className="w-20 text-right text-xs tabular-nums">₹{v.toFixed(4)}</span>
-                </div>
-              ))}
-            </div>
           </div>
         )}
 
