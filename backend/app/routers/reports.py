@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.auth.deps import OwnerUser
@@ -18,12 +18,57 @@ from app.models.upload import PrintJob
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
+
+@router.get("/statuses")
+async def list_statuses(
+    current_user: OwnerUser,
+    db: Session = Depends(get_db),
+    printer_ids: str | None = Query(None),
+):
+    """Distinct job statuses present in the data, most common first.
+
+    Job status is free text carried over from the printer's CSV export (values like
+    "Printing Completed" or "RIP Completed"), so filter options must be derived from
+    the data rather than hardcoded.
+    """
+    scoped_ids = _scoped_printer_ids(db, printer_ids)
+    if not scoped_ids:
+        return {"data": [], "message": "ok"}
+
+    rows = (
+        db.query(PrintJob.status, func.count(PrintJob.id).label("count"))
+        .filter(
+            PrintJob.printer_id.in_(scoped_ids),
+            PrintJob.status.isnot(None),
+            PrintJob.status != "",
+        )
+        .group_by(PrintJob.status)
+        .order_by(func.count(PrintJob.id).desc())
+        .all()
+    )
+    return {
+        "data": [{"value": s, "count": c} for s, c in rows],
+        "message": "ok",
+    }
+
 SORTABLE = {
     "recorded_at": PrintJob.recorded_at,
     "printed_pages": PrintJob.printed_pages,
     "job_name": PrintJob.job_name,
     "status": PrintJob.status,
 }
+
+
+def _scoped_printer_ids(db: Session, printer_ids_str: str | None) -> list[int]:
+    """Resolve the comma-separated printer_ids param to a list of known printer IDs."""
+    all_printer_ids = [p.id for p in db.query(Printer.id).all()]
+    if not all_printer_ids or not printer_ids_str:
+        return all_printer_ids
+    try:
+        requested = [int(x.strip()) for x in printer_ids_str.split(",") if x.strip()]
+    except ValueError:
+        return all_printer_ids
+    return [pid for pid in requested if pid in all_printer_ids]
 
 
 def _build_query(
@@ -35,21 +80,9 @@ def _build_query(
     status: str,
     search: str | None,
 ):
-    # Resolve printer scope
-    all_printer_ids = [
-        p.id for p in db.query(Printer.id).all()
-    ]
-    if not all_printer_ids:
+    scoped_ids = _scoped_printer_ids(db, printer_ids_str)
+    if not scoped_ids:
         return None
-
-    if printer_ids_str:
-        try:
-            requested = [int(x.strip()) for x in printer_ids_str.split(",") if x.strip()]
-            scoped_ids = [pid for pid in requested if pid in all_printer_ids]
-        except ValueError:
-            scoped_ids = all_printer_ids
-    else:
-        scoped_ids = all_printer_ids
 
     q = db.query(PrintJob).filter(PrintJob.printer_id.in_(scoped_ids))
 

@@ -6,32 +6,37 @@ import {
   PieChart, Pie, Cell,
 } from 'recharts';
 import { useState } from 'react';
-
-const PERIODS = [
-  { label: '7 days', value: '7d' },
-  { label: '30 days', value: '30d' },
-  { label: '90 days', value: '90d' },
-];
+import { DateRangePicker, DateRange } from '@/components/ui/DateRangePicker';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
+function defaultStart(): Date {
+  const d = new Date();
+  d.setDate(d.getDate() - 30);
+  return d;
+}
+
 export default function AnalyticsPage() {
-  const [period, setPeriod] = useState('30d');
+  const [range, setRange] = useState<DateRange>({ start: defaultStart(), end: new Date() });
 
-  const { data: comparison } = useQuery({
-    queryKey: ['printers-comparison', period],
-    queryFn: () => api.get(`/analytics/printers-comparison?period=${period}`).then(r => r.data.data),
+  const rp = `start_date=${range.start.toISOString()}&end_date=${range.end.toISOString()}`;
+
+  const { data: comparison, isFetching: comparisonFetching } = useQuery({
+    queryKey: ['printers-comparison', rp],
+    queryFn: () => api.get(`/analytics/printers-comparison?${rp}`).then(r => r.data.data),
   });
 
-  const { data: breakdown } = useQuery({
-    queryKey: ['cost-breakdown', period],
-    queryFn: () => api.get(`/analytics/cost-breakdown?period=${period}`).then(r => r.data.data),
+  const { data: breakdown, isFetching: breakdownFetching } = useQuery({
+    queryKey: ['cost-breakdown', rp],
+    queryFn: () => api.get(`/analytics/cost-breakdown?${rp}`).then(r => r.data.data),
   });
 
-  const { data: summary } = useQuery({
-    queryKey: ['analytics-summary', period],
-    queryFn: () => api.get(`/analytics/summary?period=${period}`).then(r => r.data.data),
+  const { data: summary, isFetching: summaryFetching } = useQuery({
+    queryKey: ['analytics-summary', rp],
+    queryFn: () => api.get(`/analytics/summary?${rp}`).then(r => r.data.data),
   });
+
+  const isFetching = comparisonFetching || breakdownFetching || summaryFetching;
 
   const pieData = breakdown
     ? [
@@ -48,18 +53,15 @@ export default function AnalyticsPage() {
           <h1 className="text-2xl font-bold">Analytics</h1>
           <p className="text-sm text-muted-foreground mt-1">Cost breakdown and printer comparisons</p>
         </div>
-        <div className="flex gap-1 rounded-md border bg-card p-1">
-          {PERIODS.map((p) => (
-            <button
-              key={p.value}
-              onClick={() => setPeriod(p.value)}
-              className={`rounded px-3 py-1.5 text-sm transition-colors ${period === p.value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
+        <DateRangePicker value={range} onChange={setRange} isLoading={isFetching} />
       </div>
+
+      {isFetching && (
+        <div className="flex items-center justify-center gap-2 rounded-md border bg-card py-2 text-xs text-muted-foreground">
+          <span className="h-3 w-3 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-primary" />
+          Updating results…
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Printer Comparison */}

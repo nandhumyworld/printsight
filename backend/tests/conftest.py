@@ -12,6 +12,7 @@ from app.config import get_settings, settings
 from app.database import Base
 from app.main import app
 from app.models.printer import Printer
+from app.models.upload import PrintJob, UploadBatch
 from app.models.user import User, UserRole
 
 
@@ -75,6 +76,74 @@ def printer_with_mapping(db_session, test_user) -> Printer:
     yield p
     db_session.delete(p)
     db_session.commit()
+
+
+@pytest.fixture
+def second_printer(db_session, test_user) -> Printer:
+    p = Printer(owner_id=test_user.id, name="Other Printer", column_mapping={})
+    db_session.add(p)
+    db_session.commit()
+    db_session.refresh(p)
+    yield p
+    db_session.delete(p)
+    db_session.commit()
+
+
+@pytest.fixture
+def printer_with_status_mapping(db_session, test_user) -> Printer:
+    """Printer whose column mapping includes `status`, for report status filtering."""
+    p = Printer(
+        owner_id=test_user.id,
+        name="Status Printer",
+        column_mapping={
+            "job_id": "job_id",
+            "recorded_at": "recorded_at",
+            "status": "status",
+            "printed_pages": "printed_pages",
+            "color_pages": "color_pages",
+            "bw_pages": "bw_pages",
+        },
+    )
+    db_session.add(p)
+    db_session.commit()
+    db_session.refresh(p)
+    yield p
+    db_session.query(PrintJob).filter(PrintJob.printer_id == p.id).delete()
+    db_session.query(UploadBatch).filter(UploadBatch.printer_id == p.id).delete()
+    db_session.commit()
+    db_session.delete(p)
+    db_session.commit()
+
+
+@pytest.fixture
+def print_person_user(db_session) -> User:
+    u = User(
+        email=f"printer-person-{os.getpid()}@example.com",
+        hashed_password="x",
+        full_name="Print Person",
+        role=UserRole.print_person,
+        is_active=True,
+    )
+    db_session.add(u)
+    db_session.commit()
+    db_session.refresh(u)
+    yield u
+    db_session.delete(u)
+    db_session.commit()
+
+
+@pytest.fixture
+def owner_token(test_user) -> str:
+    from app.routers.auth import _make_access_token
+
+    return _make_access_token(test_user.id)
+
+
+@pytest.fixture
+def print_person_token(print_person_user) -> str:
+    from app.routers.auth import _make_access_token
+
+    return _make_access_token(print_person_user.id)
 
 
 @pytest.fixture(autouse=True)

@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.auth.api_key import require_ingest_api_key
-from app.auth.deps import CurrentUser
+from app.auth.deps import CurrentUser, OwnerUser
 from app.config import settings
 from app.database import get_db
 from app.models.paper import Paper
@@ -287,10 +287,76 @@ async def list_uploads(
                 "rows_imported": b.rows_imported,
                 "rows_skipped": b.rows_skipped,
                 "status": b.status.value,
+                "source": b.source.value,
             }
             for b in batches
         ],
         "message": "ok",
+    }
+
+
+@router.get("/{batch_id:int}")
+async def get_upload_batch(
+    printer_id: int,
+    batch_id: int,
+    current_user: CurrentUser,
+    db: Session = Depends(get_db),
+):
+    """Full detail for one upload batch, including per-row skip reasons."""
+    _get_printer_or_403(db, printer_id, current_user.id)
+    batch = (
+        db.query(UploadBatch)
+        .filter(UploadBatch.id == batch_id, UploadBatch.printer_id == printer_id)
+        .first()
+    )
+    if not batch:
+        raise HTTPException(status_code=404, detail="Upload batch not found")
+    return {
+        "data": {
+            "id": batch.id,
+            "filename": batch.filename,
+            "source": batch.source.value,
+            "uploaded_at": batch.uploaded_at.isoformat(),
+            "status": batch.status.value,
+            "rows_total": batch.rows_total,
+            "rows_imported": batch.rows_imported,
+            "rows_skipped": batch.rows_skipped,
+            "skipped_details": batch.skipped_details or [],
+        },
+        "message": "ok",
+    }
+
+
+@router.delete("/{batch_id:int}")
+async def delete_upload_batch(
+    printer_id: int,
+    batch_id: int,
+    current_user: OwnerUser,
+    db: Session = Depends(get_db),
+):
+    """Delete one upload history row. Imported print jobs are kept."""
+    _get_printer_or_403(db, printer_id, current_user.id)
+    batch = (
+        db.query(UploadBatch)
+        .filter(UploadBatch.id == batch_id, UploadBatch.printer_id == printer_id)
+        .first()
+    )
+    if not batch:
+        raise HTTPException(status_code=404, detail="Upload batch not found")
+
+    jobs_preserved = (
+        db.query(PrintJob).filter(PrintJob.upload_batch_id == batch_id).count()
+    )
+    # Bulk query delete on purpose: UploadBatch.print_jobs declares
+    # cascade="all, delete-orphan", so an ORM delete would take the imported jobs
+    # with it. This emits plain SQL and lets the FK's ondelete=SET NULL orphan them.
+    db.query(UploadBatch).filter(UploadBatch.id == batch_id).delete(
+        synchronize_session=False
+    )
+    db.commit()
+    return {
+        "data": {"batch_id": batch_id, "jobs_preserved": jobs_preserved},
+        "message": f"Deleted upload record; kept {jobs_preserved} print jobs",
     }
 
 

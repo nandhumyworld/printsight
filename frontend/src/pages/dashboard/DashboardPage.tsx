@@ -55,20 +55,22 @@ export default function DashboardPage() {
   const printerParam = selectedPrinter ? `&printer_id=${selectedPrinter.id}` : '';
   const rp = `start_date=${range.start.toISOString()}&end_date=${range.end.toISOString()}${printerParam}`;
 
-  const { data: summary, isLoading: summaryLoading } = useQuery({
+  const { data: summary, isLoading: summaryLoading, isFetching: summaryFetching } = useQuery({
     queryKey: ['analytics-summary', rp],
     queryFn: () => api.get(`/analytics/summary?${rp}`).then(r => r.data.data),
   });
 
-  const { data: tonerData, isLoading: tonerLoading } = useQuery({
+  const { data: tonerData, isLoading: tonerLoading, isFetching: tonerFetching } = useQuery({
     queryKey: ['toner-breakdown', rp],
     queryFn: () => api.get(`/analytics/toner-breakdown?${rp}`).then(r => r.data.data),
   });
 
-  const { data: paperData, isLoading: paperLoading } = useQuery({
+  const { data: paperData, isLoading: paperLoading, isFetching: paperFetching } = useQuery({
     queryKey: ['paper-breakdown', rp],
     queryFn: () => api.get(`/analytics/paper-breakdown?${rp}`).then(r => r.data.data),
   });
+
+  const rangeFetching = summaryFetching || tonerFetching || paperFetching;
 
   const { data: topJobs } = useQuery({
     queryKey: ['top-jobs', rp],
@@ -108,7 +110,7 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-bold">Dashboard</h1>
           <p className="text-muted-foreground text-sm mt-1">Print cost overview and trends</p>
         </div>
-        <DateRangePicker value={range} onChange={setRange} />
+        <DateRangePicker value={range} onChange={setRange} isLoading={rangeFetching} />
       </div>
 
       {/* KPI cards */}
