@@ -77,6 +77,48 @@ def printer_with_mapping(db_session, test_user) -> Printer:
     db_session.commit()
 
 
+@pytest.fixture
+def second_printer(db_session, test_user) -> Printer:
+    p = Printer(owner_id=test_user.id, name="Other Printer", column_mapping={})
+    db_session.add(p)
+    db_session.commit()
+    db_session.refresh(p)
+    yield p
+    db_session.delete(p)
+    db_session.commit()
+
+
+@pytest.fixture
+def print_person_user(db_session) -> User:
+    u = User(
+        email=f"printer-person-{os.getpid()}@example.com",
+        hashed_password="x",
+        full_name="Print Person",
+        role=UserRole.print_person,
+        is_active=True,
+    )
+    db_session.add(u)
+    db_session.commit()
+    db_session.refresh(u)
+    yield u
+    db_session.delete(u)
+    db_session.commit()
+
+
+@pytest.fixture
+def owner_token(test_user) -> str:
+    from app.routers.auth import _make_access_token
+
+    return _make_access_token(test_user.id)
+
+
+@pytest.fixture
+def print_person_token(print_person_user) -> str:
+    from app.routers.auth import _make_access_token
+
+    return _make_access_token(print_person_user.id)
+
+
 @pytest.fixture(autouse=True)
 def _ingest_key_env(monkeypatch):
     """Set a known ingest key for all tests; clear cached settings."""

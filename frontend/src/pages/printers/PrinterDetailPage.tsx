@@ -3,6 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/services/api';
 import { useImport } from '@/context/ImportContext';
+import { useAuth } from '@/hooks/useAuth';
+import { UploadBatchDrawer } from '@/components/printers/UploadBatchDrawer';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -415,9 +417,11 @@ export default function PrinterDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { hasRole } = useAuth();
   const fileRef = useRef<HTMLInputElement>(null);
   const selectedFileRef = useRef<File | null>(null);
 
+  const [selectedBatchId, setSelectedBatchId] = useState<number | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const [recomputeStatus, setRecomputeStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   const [recomputeProgress, setRecomputeProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 });
@@ -476,6 +480,13 @@ export default function PrinterDetailPage() {
       setRecomputeStatus('error');
     }
   };
+
+  const deleteBatch = useMutation({
+    mutationFn: (batchId: number) => api.delete(`/printers/${id}/uploads/${batchId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['uploads', id] });
+    },
+  });
 
   const clearJobs = useMutation({
     mutationFn: () => api.delete(`/printers/${id}/uploads/clear`),
@@ -791,23 +802,55 @@ export default function PrinterDetailPage() {
           <h2 className="font-semibold mb-3">Upload History</h2>
           <div className="space-y-2">
             {uploads.map((u: any) => (
-              <div key={u.id} className="flex items-center justify-between rounded-md border px-4 py-2.5 text-sm">
-                <div className="flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-muted-foreground" />
-                  <span className="font-medium">{u.filename}</span>
-                </div>
-                <div className="flex items-center gap-4 text-muted-foreground text-xs">
-                  <span>{u.rows_imported}/{u.rows_total} rows</span>
-                  <span>{formatDateTime(u.uploaded_at)}</span>
-                  <span className={`rounded-full px-2 py-0.5 ${u.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                    {u.status}
-                  </span>
-                </div>
+              <div key={u.id} className="flex items-center gap-2 rounded-md border px-4 py-2.5 text-sm">
+                <button
+                  type="button"
+                  onClick={() => setSelectedBatchId(u.id)}
+                  className="flex flex-1 items-center justify-between gap-4 text-left hover:opacity-80 transition-opacity"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <span className="font-medium truncate">{u.filename}</span>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-4 text-muted-foreground text-xs">
+                    {u.rows_skipped > 0 && (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-700">
+                        {u.rows_skipped} skipped
+                      </span>
+                    )}
+                    <span>{u.rows_imported}/{u.rows_total} rows</span>
+                    <span>{formatDateTime(u.uploaded_at)}</span>
+                    <span className={`rounded-full px-2 py-0.5 ${u.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                      {u.status}
+                    </span>
+                  </div>
+                </button>
+                {hasRole('owner') && (
+                  <button
+                    type="button"
+                    aria-label={`Delete upload record for ${u.filename}`}
+                    disabled={deleteBatch.isPending}
+                    onClick={() => {
+                      if (confirm(`Delete the upload record for "${u.filename}"?\n\nImported print jobs, costs and analytics are NOT affected. This cannot be undone.`)) {
+                        deleteBatch.mutate(u.id);
+                      }
+                    }}
+                    className="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-red-50 hover:text-red-600 disabled:opacity-40 transition-colors"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
               </div>
             ))}
           </div>
         </div>
       )}
+
+      <UploadBatchDrawer
+        printerId={id!}
+        batchId={selectedBatchId}
+        onClose={() => setSelectedBatchId(null)}
+      />
 
       {/* Toner Management */}
       <TonerManagement printerId={id!} columnMapping={printer.column_mapping ?? {}} />

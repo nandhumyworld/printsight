@@ -1,7 +1,12 @@
 # Upload History: Error Detail View + Admin Batch Clear
 
 **Date:** 2026-07-24
-**Status:** Draft — awaiting review
+**Status:** Implemented (2026-07-24), scope reduced from the original draft
+
+> **Scope change.** The original draft proposed an admin-page section with a
+> per-printer bulk clear. That was cut in favour of deleting **individual** history
+> rows directly from the printer's Upload History list, owner-gated. §3 and §5 below
+> reflect what was built; the bulk-clear and admin-summary endpoints were not.
 
 ## Problem
 
@@ -89,19 +94,18 @@ literal GET segment cannot be swallowed by it.
 of a large failed import would make the list response very heavy. The list gains
 only `source`, which the drawer header and the row badge need.
 
-## 3. Backend — admin clear
+## 3. Backend — delete one history row
 
-Two new routes in `backend/app/routers/admin.py`, both `OwnerUser` (the router is
-already owner-only throughout).
+One new route in `backend/app/routers/print_jobs.py`, alongside the detail endpoint:
 
 ```
-GET    /api/v1/admin/upload-batches/summary
-DELETE /api/v1/admin/printers/{printer_id}/upload-batches
+DELETE /api/v1/printers/{printer_id}/uploads/{batch_id}
 ```
 
-Summary returns one row per printer: `printer_id`, `printer_name`, `batch_count`,
-`oldest_at`, `newest_at`. Printers with zero batches are included, so the admin can
-see the full fleet.
+- Auth: `OwnerUser`. This is the only route in this router that requires owner —
+  every other one takes `CurrentUser` — so a `print_person` gets 403.
+- 404 on a missing batch, or one belonging to a different printer.
+- Deletes exactly one `upload_batches` row. Print jobs are kept.
 
 ### The delete must be a bulk query delete
 
@@ -158,19 +162,25 @@ In `PrinterDetailPage.tsx`, the upload-history rows (currently `<div>`, lines
 788-810) become keyboard-focusable buttons that set `selectedBatchId`. Visual
 design of the list is otherwise unchanged.
 
-## 5. Frontend — admin section
+## 5. Frontend — per-row delete
 
-New section on `pages/admin/AdminPage.tsx`, below the existing stat cards: a table
-of printers with `batch_count` / `newest_at` and a per-row **Clear** button.
+No admin page changes. The delete lives in the existing Upload History list on
+`PrinterDetailPage.tsx`: each row gets a trash button, rendered only when
+`hasRole('owner')` from `useAuth()`.
 
-The confirm dialog must state plainly what is and isn't deleted:
+The confirm dialog states plainly what is and isn't deleted:
 
-> Delete all N upload history records for "<printer>"?
-> Imported print jobs, costs and analytics are **not** affected.
-> This cannot be undone.
+> Delete the upload record for "<filename>"?
+> Imported print jobs, costs and analytics are NOT affected. This cannot be undone.
 
-On success, invalidate `['admin-stats']`, `['admin-upload-batches']`, and
-`['uploads', printerId]`.
+On success, invalidate `['uploads', id]`. Analytics keys are deliberately not
+invalidated — nothing analytics reads has changed.
+
+Rows also gain an amber `N skipped` badge when `rows_skipped > 0`, so a problem
+import is visible without opening the drawer.
+
+**Client-side gating is cosmetic.** Hiding the button is a UX affordance, not
+security; the `OwnerUser` dependency in §3 is what actually enforces it.
 
 ## 6. Deliberately unchanged
 
@@ -206,19 +216,24 @@ Backend (`backend/tests/`):
    batch, assert the reason is present.
 2. **Cross-printer batch detail 404s** — batch belonging to printer A is not readable
    via printer B's path.
-3. **Clear preserves print jobs** — the critical one. Import jobs, clear batches,
+3. **Delete preserves print jobs** — the critical one. Import jobs, delete the batch,
    then assert `print_jobs` count is unchanged and every `upload_batch_id` is `NULL`.
    This is the regression guard for the cascade trap in §3.
-4. **Clear is owner-only** — a `print_person` token gets 403.
-5. **Summary counts** — reflect actual batch rows, and include printers with zero.
+4. **Delete is owner-only** — a `print_person` token gets 403 and the batch survives.
+5. **List includes `source`** — so the UI can badge automated imports.
 
-Frontend: drawer renders grouped reasons and the empty state.
+All five live in `backend/tests/integration/test_upload_history.py`. New shared
+fixtures in `conftest.py`: `second_printer`, `print_person_user`, `owner_token`,
+`print_person_token`.
 
-## 9. Build order
+Frontend: covered by `tsc --noEmit`; no component test framework is set up in this
+project yet.
 
-1. `GET /uploads/{batch_id}` + `source` on the list response, with tests 1-2.
-2. `UploadBatchDrawer` + wire up `PrinterDetailPage`.
-3. Admin summary + delete endpoints, with tests 3-5. Test 3 before the endpoint.
-4. Admin UI section + confirm dialog.
+## 9. Outcome
 
-Steps 1-2 and 3-4 are independent and can be built in either order.
+Built 2026-07-24 following the test order above. All 5 new tests pass; full backend
+suite 51 passed. Frontend typecheck clean.
+
+Note on test 2 (cross-printer 404): it passed before implementation too, because an
+absent route also 404s. It only became a meaningful assertion once the route existed
+— worth remembering if it is ever refactored.
